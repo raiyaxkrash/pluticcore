@@ -210,8 +210,10 @@ public class SlotRollSession {
             FeedbackEffects.playSound(player, SoundEvents.NOTE_BLOCK_PLING.get(), 1.0f, 1.25f);
             FeedbackEffects.spawnParticles(player, ParticleTypes.ENCHANT, 16, 0.4, 0.4, 0.4, 0.1);
         } else if (tick >= 28) {
-            finalizeOutcome(server, player);
-            finished = true;
+            boolean success = finalizeOutcome(server, player);
+            if (success) {
+                this.finished = true;
+            }
         }
     }
 
@@ -222,7 +224,12 @@ public class SlotRollSession {
      * Sets this.finalized = true STRICTLY AFTER successful commit.
      */
     public void prepareAndCommitOutcome(JackpotSavedData jackpotData, String playerNameFallback) {
+        prepareAndCommitOutcome(jackpotData, playerNameFallback, SlotRewardFactory.DEFAULT);
+    }
+
+    public void prepareAndCommitOutcome(JackpotSavedData jackpotData, String playerNameFallback, SlotRewardFactory rewardFactory) {
         java.util.Objects.requireNonNull(jackpotData, "jackpotData must not be null for prepareAndCommitOutcome");
+        SlotRewardFactory factory = (rewardFactory != null) ? rewardFactory : SlotRewardFactory.DEFAULT;
 
         // Idempotency: check both in-memory flag and persistent outbox presence
         if (this.finalized || jackpotData.hasPendingTransaction(rollId)) {
@@ -249,13 +256,8 @@ public class SlotRollSession {
             rewardStacks.addAll(ChipUtils.convertAmountToChips(jackpotPoolAmount));
             rewardStacks.addAll(ChipUtils.splitChips(betTier.getItem(), Math.max(1, betMultiplierPayout)));
 
-            // Commemorative trophy token
-            net.minecraft.world.item.Item tokenItem;
-            try {
-                tokenItem = ModItems.JACKPOT_TOKEN.get();
-            } catch (Exception e) {
-                tokenItem = net.minecraft.world.item.Items.GOLD_NUGGET;
-            }
+            // Commemorative trophy token obtained directly via factory without hidden catch-fallbacks
+            net.minecraft.world.item.Item tokenItem = factory.getJackpotToken();
             ItemStack jackpotToken = new ItemStack(tokenItem, 1);
             CompoundTag tokenTag = jackpotToken.getOrCreateTag();
             String winnerName = this.playerName;
@@ -275,12 +277,7 @@ public class SlotRollSession {
             rewardStacks.addAll(ChipUtils.splitChips(betTier.getItem(), payoutAmount));
 
             if (outcome.isThreeJokers()) {
-                net.minecraft.world.item.Item jokerItem;
-                try {
-                    jokerItem = ModItems.JOKER.get();
-                } catch (Exception e) {
-                    jokerItem = net.minecraft.world.item.Items.PAPER;
-                }
+                net.minecraft.world.item.Item jokerItem = factory.getJokerItem();
                 rewardStacks.add(new ItemStack(jokerItem, 1));
             }
         } else {
@@ -319,11 +316,15 @@ public class SlotRollSession {
      * Phase 2: Deliver committed rewards to online player and trigger feedback effects.
      */
     public void deliverCommittedReward(ServerPlayer player, RewardDeliverySink sink, JackpotSavedData jackpotData, MinecraftServer server) {
+        boolean hasPendingTx = false;
+        boolean allDelivered = true;
+
         if (jackpotData != null && (player != null || sink != null)) {
             RewardDeliverySink actualSink = (sink != null) ? sink : InventoryUtils::giveOrDrop;
             List<JackpotSavedData.RewardTransaction> pending = jackpotData.getPendingTransactions(playerUUID);
             for (JackpotSavedData.RewardTransaction tx : pending) {
                 if (tx.getTransactionId().equals(rollId)) {
+                    hasPendingTx = true;
                     boolean txFailed = false;
                     for (ItemStack stack : tx.getItems()) {
                         try {
@@ -333,6 +334,7 @@ public class SlotRollSession {
                             LOGGER.error("Failed to deliver reward item {} for roll {} to player {}: {}",
                                     stack, rollId, (player != null ? player.getScoreboardName() : playerUUID), e.getMessage(), e);
                             txFailed = true;
+                            allDelivered = false;
                             break;
                         }
                     }
@@ -345,6 +347,14 @@ public class SlotRollSession {
         }
 
         if (player != null) {
+            if (hasPendingTx && !allDelivered) {
+                // Feedback on partial delivery failure: Notify player that undelivered items are safe in queue
+                player.sendSystemMessage(Component.translatable("pocketodds.delivery.partial_queued").withStyle(ChatFormatting.YELLOW, ChatFormatting.BOLD));
+                FeedbackEffects.sendActionBar(player, Component.translatable("pocketodds.delivery.partial_queued").withStyle(ChatFormatting.GOLD));
+                FeedbackEffects.playSound(player, SoundEvents.SHIELD_BLOCK, 1.0f, 0.8f);
+                return;
+            }
+
             if (outcome.isJackpot()) {
                 long displayAmount = (this.wonJackpotAmount > 0L) ? this.wonJackpotAmount : 100L;
                 int betMultiplierPayout = (int) Math.round(betCount * outcome.getMultiplier());
@@ -400,12 +410,12 @@ public class SlotRollSession {
         }
     }
 
-    public void finalizeOutcome(MinecraftServer server, ServerPlayer player) {
+    public boolean finalizeOutcome(MinecraftServer server, ServerPlayer player) {
         ServerLevel overworld = (server != null) ? server.overworld() : null;
         JackpotSavedData jackpotData = (overworld != null) ? JackpotSavedData.get(overworld) : null;
         if (jackpotData == null) {
             LOGGER.error("Cannot finalize roll session {}: JackpotSavedData is null (overworld unavailable)!", rollId);
-            return;
+            return false;
         }
 
         String playerNameFallback = null;
@@ -417,5 +427,6 @@ public class SlotRollSession {
 
         prepareAndCommitOutcome(jackpotData, playerNameFallback);
         deliverCommittedReward(player, InventoryUtils::giveOrDrop, jackpotData, server);
+        return this.finalized;
     }
 }

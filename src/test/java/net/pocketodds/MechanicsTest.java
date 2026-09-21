@@ -40,6 +40,10 @@ public class MechanicsTest {
             if (!forgeReg.containsKey(tokenLoc)) {
                 forgeReg.register(tokenLoc, new JackpotTokenItem(new net.minecraft.world.item.Item.Properties()));
             }
+            net.minecraft.resources.ResourceLocation jokerLoc = new net.minecraft.resources.ResourceLocation("pocketodds", "joker");
+            if (!forgeReg.containsKey(jokerLoc)) {
+                forgeReg.register(jokerLoc, new net.minecraft.world.item.Item(new net.minecraft.world.item.Item.Properties()));
+            }
             forgeReg.freeze();
         }
     }
@@ -449,5 +453,18 @@ public class MechanicsTest {
         Assertions.assertTrue(rtpGreen < 100.0, "Roulette Green RTP must be under 100%!");
         Assertions.assertEquals(97.30, Math.round(rtpRed * 100.0) / 100.0);
         Assertions.assertEquals(94.59, Math.round(rtpGreen * 100.0) / 100.0);
+    }
+
+    @Test
+    public void testFinalizeOutcomeFailureDoesNotFinishSession() {
+        SlotSymbol[] symbols = new SlotSymbol[]{SlotSymbol.CHERRY, SlotSymbol.IRON, SlotSymbol.GOLD};
+        SlotOutcome outcome = new SlotOutcome(symbols, false, false, false, null, 0, 0.0);
+        SlotRollSession session = new SlotRollSession(UUID.randomUUID(), "Steve", ChipTier.COPPER, 1, symbols, outcome, false);
+
+        // Server is null, overworld is null -> finalizeOutcome fails and returns false
+        boolean result = session.finalizeOutcome(null, null);
+        Assertions.assertFalse(result, "finalizeOutcome must return false if JackpotSavedData is unavailable!");
+        Assertions.assertFalse(session.isFinished(), "Session must not be finished when finalizeOutcome fails!");
+        Assertions.assertFalse(session.isFinalized(), "Session must not be marked finalized when commit fails!");
     }
 }

@@ -76,6 +76,7 @@
   "pocketodds.skulls.curse": "THREE SKULLS! The curse of gambling awakens!",
   "pocketodds.insurance.triggered": "Insurance saved %s of your bet!",
   "pocketodds.reconnect.rewards_delivered": "Welcome back! Your pending casino winnings have been delivered.",
+  "pocketodds.delivery.partial_queued": "Some rewards could not be delivered and were saved to the queue. They will be delivered later!",
 
   "pocketodds.dice.bet_changed": "Dice bet set to: %s %s chips",
   "pocketodds.dice.snake_eyes": "SNAKE EYES (1-1)! Complete disaster!",

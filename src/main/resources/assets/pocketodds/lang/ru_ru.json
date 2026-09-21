@@ -76,6 +76,7 @@
   "pocketodds.skulls.curse": "ТРИ ЧЕРЕПА! Проклятие азарта пробудилось!",
   "pocketodds.insurance.triggered": "Страховка спасла %s от вашей ставки!",
   "pocketodds.reconnect.rewards_delivered": "С возвращением! Ваш выигрыш за незавершенную игру начислен.",
+  "pocketodds.delivery.partial_queued": "Часть наград не была выдана и сохранена в очереди. Они будут выданы позже!",
 
   "pocketodds.dice.bet_changed": "Ставка для костей установлена на: %s %s фишек",
   "pocketodds.dice.snake_eyes": "ЗМЕИНЫЕ ГЛАЗКИ (1-1)! Полный провал!",
