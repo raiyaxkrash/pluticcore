@@ -118,4 +118,7 @@ $RECYCLE.BIN/
 .system_generated/
 .cortex/
 .gemini/
+GEMINI.md
+AGENTS.md
+.agents/
 
