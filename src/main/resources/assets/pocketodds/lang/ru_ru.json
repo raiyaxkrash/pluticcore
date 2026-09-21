@@ -107,5 +107,20 @@
   "pocketodds.symbol.emerald": "Изумруд",
   "pocketodds.symbol.star": "Звезда",
   "pocketodds.symbol.skull": "Череп",
-  "pocketodds.symbol.joker": "Джокер"
+  "pocketodds.symbol.joker": "Джокер",
+
+  "pocketodds.item_bet.bet_changed": "Ставка предметами: %s x %s",
+  "pocketodds.item_bet.not_allowed": "Этот предмет запрещён для ставок!",
+  "pocketodds.item_bet.game_not_allowed": "Этот предмет нельзя использовать в этой игре!",
+  "pocketodds.item_bet.container_forbidden": "Контейнеры с предметами запрещены для ставок!",
+  "pocketodds.item_bet.damaged_forbidden": "Повреждённые предметы не принимаются!",
+  "pocketodds.item_bet.nbt_forbidden": "Предметы с зачарованиями или модификациями не принимаются!",
+  "pocketodds.item_bet.count_out_of_range": "Количество предметов (%s) вне допустимого диапазона [%s..%s]!",
+  "pocketodds.item_bet.not_enough": "Недостаточно предметов для ставки! Требуется %s x %s.",
+  "pocketodds.item_bet.win": "ВЫИГРЫШ: +%s x %s!",
+  "pocketodds.item_bet.insurance_refund": "Страховка вернула %s x %s от вашей ставки!",
+  "pocketodds.item_bet.jackpot_won": "СОРВАН ДЖЕКПОТ! Банк: %s фишек + %s x %s!",
+  "pocketodds.deck.not_owner": "Вы не являетесь владельцем этой активной сессии колоды!",
+  "tooltip.pocketodds.item_bet.bet_info": "Ставка: %s x %s (%s кредитов)",
+  "tooltip.pocketodds.offhand_item_tip": "Держите разрешённый предмет в левой руке, чтобы играть на него."
 }

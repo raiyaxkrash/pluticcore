@@ -7,10 +7,16 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.pocketodds.config.PocketOddsConfig;
+import net.pocketodds.gambling.core.BetPreparation;
+import net.pocketodds.gambling.core.DeckSession;
+import net.pocketodds.gambling.core.RewardLine;
+import net.pocketodds.util.ChipUtils;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class JackpotSavedData extends SavedData {
+    private static final org.slf4j.Logger LOGGER = com.mojang.logging.LogUtils.getLogger();
     public static final String DATA_NAME = "pocketodds_jackpot";
     private long jackpotAmount;
 
@@ -18,10 +24,14 @@ public class JackpotSavedData extends SavedData {
     private final List<RewardTransaction> pendingTransactions = new ArrayList<>();
     private final Map<UUID, CompoundTag> activeSessions = new HashMap<>();
 
+    // 2PC prepared bets and server-side deck sessions
+    private final Map<UUID, BetPreparation> preparedBets = new ConcurrentHashMap<>();
+    private final Map<UUID, DeckSession> deckSessions = new ConcurrentHashMap<>();
+
     public static class RewardTransaction {
         private final UUID transactionId;
         private final UUID playerUUID;
-        private final List<ItemStack> items;
+        private final List<RewardLine> lines;
         private final boolean jackpot;
         private final long jackpotAmount;
         private boolean jackpotClaimed;
@@ -36,14 +46,26 @@ public class JackpotSavedData extends SavedData {
             this.jackpot = jackpot;
             this.jackpotAmount = jackpotAmount;
             this.jackpotClaimed = jackpotClaimed;
-            this.items = new ArrayList<>();
+            this.lines = new ArrayList<>();
             if (items != null) {
                 for (ItemStack stack : items) {
                     if (stack != null && !stack.isEmpty()) {
-                        this.items.add(stack.copy());
+                        this.lines.add(new RewardLine(stack));
                     }
                 }
             }
+        }
+
+        public static RewardTransaction fromLines(UUID transactionId, UUID playerUUID, List<RewardLine> lines, boolean jackpot, long jackpotAmount, boolean jackpotClaimed) {
+            RewardTransaction tx = new RewardTransaction(transactionId, playerUUID, Collections.emptyList(), jackpot, jackpotAmount, jackpotClaimed);
+            if (lines != null) {
+                for (RewardLine line : lines) {
+                    if (line != null && !line.getStack().isEmpty()) {
+                        tx.lines.add(new RewardLine(line.getLineId(), line.getStack(), line.isDelivered()));
+                    }
+                }
+            }
+            return tx;
         }
 
         public UUID getTransactionId() {
@@ -70,22 +92,47 @@ public class JackpotSavedData extends SavedData {
             this.jackpotClaimed = claimed;
         }
 
-        public List<ItemStack> getItems() {
-            List<ItemStack> copy = new ArrayList<>(items.size());
-            for (ItemStack stack : items) {
-                copy.add(stack.copy());
+        public List<RewardLine> getLines() {
+            List<RewardLine> copy = new ArrayList<>(lines.size());
+            for (RewardLine line : lines) {
+                copy.add(new RewardLine(line.getLineId(), line.getStack(), line.isDelivered()));
             }
             return Collections.unmodifiableList(copy);
         }
 
-        boolean removeDeliveredItem(ItemStack stack) {
-            for (Iterator<ItemStack> it = items.iterator(); it.hasNext(); ) {
-                ItemStack item = it.next();
-                if (ItemStack.isSameItemSameTags(item, stack)) {
-                    if (item.getCount() <= stack.getCount()) {
+        public List<ItemStack> getItems() {
+            List<ItemStack> copy = new ArrayList<>();
+            for (RewardLine line : lines) {
+                if (!line.isDelivered() && !line.getStack().isEmpty()) {
+                    copy.add(line.getStack());
+                }
+            }
+            return Collections.unmodifiableList(copy);
+        }
+
+        public synchronized boolean confirmDeliveredLine(UUID lineId) {
+            for (Iterator<RewardLine> it = lines.iterator(); it.hasNext(); ) {
+                RewardLine line = it.next();
+                if (line.getLineId().equals(lineId)) {
+                    line.setDelivered(true);
+                    it.remove();
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public synchronized boolean removeDeliveredItem(ItemStack stack) {
+            for (Iterator<RewardLine> it = lines.iterator(); it.hasNext(); ) {
+                RewardLine line = it.next();
+                if (!line.isDelivered() && ItemStack.isSameItemSameTags(line.getStack(), stack)) {
+                    if (line.getStack().getCount() <= stack.getCount()) {
                         it.remove();
                     } else {
+                        ItemStack item = line.getStack();
                         item.shrink(stack.getCount());
+                        it.remove();
+                        lines.add(new RewardLine(line.getLineId(), item, false));
                     }
                     return true;
                 }
@@ -94,7 +141,12 @@ public class JackpotSavedData extends SavedData {
         }
 
         public boolean isEmpty() {
-            return items.isEmpty();
+            for (RewardLine line : lines) {
+                if (!line.isDelivered() && !line.getStack().isEmpty()) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         public CompoundTag toNbt() {
@@ -107,10 +159,12 @@ public class JackpotSavedData extends SavedData {
                 tag.putBoolean("JackpotClaimed", jackpotClaimed);
             }
             ListTag listTag = new ListTag();
-            for (ItemStack stack : items) {
-                listTag.add(stack.save(new CompoundTag()));
+            for (RewardLine line : lines) {
+                if (!line.isDelivered() && !line.getStack().isEmpty()) {
+                    listTag.add(line.toNbt());
+                }
             }
-            tag.put("Items", listTag);
+            tag.put("Lines", listTag);
             return tag;
         }
 
@@ -120,15 +174,27 @@ public class JackpotSavedData extends SavedData {
             boolean jackpot = tag.getBoolean("Jackpot");
             long jackpotAmount = tag.getLong("JackpotAmount");
             boolean jackpotClaimed = tag.getBoolean("JackpotClaimed");
-            ListTag listTag = tag.getList("Items", Tag.TAG_COMPOUND);
-            List<ItemStack> items = new ArrayList<>();
-            for (int i = 0; i < listTag.size(); i++) {
-                ItemStack stack = ItemStack.of(listTag.getCompound(i));
-                if (!stack.isEmpty()) {
-                    items.add(stack);
+
+            List<RewardLine> lines = new ArrayList<>();
+            if (tag.contains("Lines", Tag.TAG_LIST)) {
+                ListTag listTag = tag.getList("Lines", Tag.TAG_COMPOUND);
+                for (int i = 0; i < listTag.size(); i++) {
+                    RewardLine line = RewardLine.fromNbt(listTag.getCompound(i));
+                    if (!line.getStack().isEmpty() && !line.isDelivered()) {
+                        lines.add(line);
+                    }
+                }
+            } else if (tag.contains("Items", Tag.TAG_LIST)) {
+                // Legacy v1 fallback
+                ListTag listTag = tag.getList("Items", Tag.TAG_COMPOUND);
+                for (int i = 0; i < listTag.size(); i++) {
+                    ItemStack stack = ItemStack.of(listTag.getCompound(i));
+                    if (!stack.isEmpty()) {
+                        lines.add(new RewardLine(stack));
+                    }
                 }
             }
-            return new RewardTransaction(txId, pId, items, jackpot, jackpotAmount, jackpotClaimed);
+            return fromLines(txId, pId, lines, jackpot, jackpotAmount, jackpotClaimed);
         }
     }
 
@@ -150,7 +216,7 @@ public class JackpotSavedData extends SavedData {
         }
         JackpotSavedData data = new JackpotSavedData(amount);
 
-        // Load new transactional outbox
+        // Load transactional outbox
         if (tag.contains("PendingTransactions", Tag.TAG_LIST)) {
             ListTag txList = tag.getList("PendingTransactions", Tag.TAG_COMPOUND);
             for (int i = 0; i < txList.size(); i++) {
@@ -176,7 +242,8 @@ public class JackpotSavedData extends SavedData {
                     if (!items.isEmpty()) {
                         data.pendingTransactions.add(new RewardTransaction(UUID.randomUUID(), uuid, items));
                     }
-                } catch (IllegalArgumentException ignored) {
+                } catch (IllegalArgumentException e) {
+                    LOGGER.error("Pocket Odds: Failed to parse legacy pending reward for key '{}': {}", key, e.getMessage(), e);
                 }
             }
         }
@@ -188,7 +255,89 @@ public class JackpotSavedData extends SavedData {
                 try {
                     UUID uuid = UUID.fromString(key);
                     data.activeSessions.put(uuid, sessionsTag.getCompound(key));
-                } catch (IllegalArgumentException ignored) {
+                } catch (IllegalArgumentException e) {
+                    LOGGER.error("Pocket Odds: Failed to parse active session key '{}': {}", key, e.getMessage(), e);
+                }
+            }
+        }
+
+        // Load server-side deck sessions BEFORE prepared bets so crash recovery can inspect active deck sessions
+        if (tag.contains("DeckSessions", Tag.TAG_COMPOUND)) {
+            CompoundTag deckTag = tag.getCompound("DeckSessions");
+            for (String key : deckTag.getAllKeys()) {
+                try {
+                    DeckSession session = DeckSession.fromNbt(deckTag.getCompound(key));
+                    data.deckSessions.put(session.getSessionId(), session);
+                } catch (Exception e) {
+                    LOGGER.error("Pocket Odds: Failed to load deck session [key={}]: {}", key, e.getMessage(), e);
+                }
+            }
+        }
+
+        // Load prepared bets with 2PC crash recovery
+        if (tag.contains("PreparedBets", Tag.TAG_COMPOUND)) {
+            CompoundTag prepTag = tag.getCompound("PreparedBets");
+            for (String key : prepTag.getAllKeys()) {
+                try {
+                    BetPreparation prep = BetPreparation.fromNbt(prepTag.getCompound(key));
+                    if (prep.getStatus() == BetPreparation.PreparationStatus.DEBITED) {
+                        UUID assocId = prep.getAssociatedId();
+                        boolean alreadyCommitted = false;
+
+                        if (assocId != null) {
+                            if (data.hasPendingTransaction(assocId)) {
+                                alreadyCommitted = true;
+                            } else if (data.deckSessions.containsKey(assocId)) {
+                                alreadyCommitted = true;
+                            } else {
+                                for (CompoundTag sessionTag : data.activeSessions.values()) {
+                                    if (sessionTag.contains("RollId") && assocId.equals(sessionTag.getUUID("RollId"))) {
+                                        alreadyCommitted = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (!alreadyCommitted && data.hasPendingTransaction(prep.getPreparationId())) {
+                            alreadyCommitted = true;
+                        }
+
+                        if (alreadyCommitted) {
+                            LOGGER.info("Pocket Odds Crash Recovery: Debited bet {} for player {} has already committed outcome/session. Skipping refund.",
+                                    prep.getPreparationId(), prep.getPlayerUUID());
+                            continue;
+                        }
+
+                        // CRASH RECOVERY: Items were debited before crash, but NO game outcome or session was ever committed!
+                        // Safely create a persistent refund transaction in the outbox.
+                        List<ItemStack> refund = new ArrayList<>();
+                        if (prep.getBetSnapshot().isChipBet()) {
+                            refund.addAll(ChipUtils.splitChips(prep.getBetSnapshot().getChipTier().getItem(), prep.getBetSnapshot().getBetCount()));
+                        } else {
+                            ItemStack proto = prep.getBetSnapshot().getItemPrototype();
+                            int max = proto.getMaxStackSize();
+                            int rem = prep.getBetSnapshot().getBetCount();
+                            while (rem > 0) {
+                                int take = Math.min(rem, max);
+                                ItemStack s = proto.copy();
+                                s.setCount(take);
+                                refund.add(s);
+                                rem -= take;
+                            }
+                        }
+                        RewardTransaction refundTx = new RewardTransaction(UUID.randomUUID(), prep.getPlayerUUID(), refund);
+                        data.pendingTransactions.add(refundTx);
+                        prep.setStatus(BetPreparation.PreparationStatus.REFUND_QUEUED);
+                        LOGGER.warn("Pocket Odds Crash Recovery: Debited bet {} for player {} had uncommitted game state. Queued refund {}.",
+                                prep.getPreparationId(), prep.getPlayerUUID(), refundTx.getTransactionId());
+                    } else if (prep.getStatus() == BetPreparation.PreparationStatus.PREPARED) {
+                        // PREPARED: items were not yet debited from player before crash -> discard safely
+                        continue;
+                    }
+                    data.preparedBets.put(prep.getPreparationId(), prep);
+                } catch (Exception e) {
+                    LOGGER.error("Pocket Odds: Failed to load or recover prepared bet [key={}]: {}", key, e.getMessage(), e);
                 }
             }
         }
@@ -198,6 +347,7 @@ public class JackpotSavedData extends SavedData {
 
     @Override
     public CompoundTag save(CompoundTag tag) {
+        tag.putInt("DataVersion", 2);
         tag.putLong("JackpotAmount", this.jackpotAmount);
 
         // Save transactional outbox
@@ -211,7 +361,7 @@ public class JackpotSavedData extends SavedData {
             tag.put("PendingTransactions", txList);
         }
 
-        // Save active sessions with current live tick state
+        // Save active sessions
         Map<UUID, net.pocketodds.gambling.slot.SlotRollSession> live = net.pocketodds.gambling.tracker.ActiveRollTracker.getActiveSessions();
         if (!live.isEmpty()) {
             CompoundTag sessionsTag = new CompoundTag();
@@ -227,6 +377,26 @@ public class JackpotSavedData extends SavedData {
             tag.put("ActiveSessions", sessionsTag);
         }
 
+        // Save prepared bets
+        if (!preparedBets.isEmpty()) {
+            CompoundTag prepTag = new CompoundTag();
+            for (Map.Entry<UUID, BetPreparation> entry : preparedBets.entrySet()) {
+                prepTag.put(entry.getKey().toString(), entry.getValue().toNbt());
+            }
+            tag.put("PreparedBets", prepTag);
+        }
+
+        // Save deck sessions
+        if (!deckSessions.isEmpty()) {
+            CompoundTag deckTag = new CompoundTag();
+            for (Map.Entry<UUID, DeckSession> entry : deckSessions.entrySet()) {
+                if (entry.getValue().isActive()) {
+                    deckTag.put(entry.getKey().toString(), entry.getValue().toNbt());
+                }
+            }
+            tag.put("DeckSessions", deckTag);
+        }
+
         return tag;
     }
 
@@ -234,18 +404,23 @@ public class JackpotSavedData extends SavedData {
         return jackpotAmount;
     }
 
+    public void addContributionBasisPoints(long totalCredits, int basisPoints) {
+        if (totalCredits <= 0 || basisPoints <= 0) {
+            return;
+        }
+        long contribution = Math.max(1L, (totalCredits * (long) basisPoints) / 10_000L);
+        this.jackpotAmount += contribution;
+        setDirty();
+    }
+
     public void addContribution(long betValue) {
         if (betValue <= 0) {
             return;
         }
-        double rate = (PocketOddsConfig.SERVER != null && PocketOddsConfig.isConfigLoaded())
-                ? PocketOddsConfig.SERVER.jackpotContributionRate.get() : 0.05;
-        if (rate <= 0.0) {
-            return;
-        }
-        long contribution = Math.max(1L, (long) Math.round(betValue * rate));
-        this.jackpotAmount += contribution;
-        setDirty();
+        int bps = (PocketOddsConfig.SERVER != null && PocketOddsConfig.isConfigLoaded())
+                ? (int) Math.round(PocketOddsConfig.SERVER.jackpotContributionRate.get() * 10_000.0)
+                : 500;
+        addContributionBasisPoints(betValue, bps);
     }
 
     public long claimJackpot() {
@@ -255,6 +430,60 @@ public class JackpotSavedData extends SavedData {
         this.jackpotAmount = baseAmount;
         setDirty();
         return payout;
+    }
+
+    // --- Prepared Bet (2PC) Methods ---
+
+    public void savePreparedBet(BetPreparation prep) {
+        if (prep != null) {
+            preparedBets.put(prep.getPreparationId(), prep);
+            setDirty();
+        }
+    }
+
+    public BetPreparation getPreparedBet(UUID preparationId) {
+        if (preparationId == null) return null;
+        return preparedBets.get(preparationId);
+    }
+
+    public void removePreparedBet(UUID preparationId) {
+        if (preparationId != null && preparedBets.remove(preparationId) != null) {
+            setDirty();
+        }
+    }
+
+    public Map<UUID, BetPreparation> getPreparedBets() {
+        return Collections.unmodifiableMap(preparedBets);
+    }
+
+    // --- Deck Session Methods ---
+
+    public void saveDeckSession(DeckSession session) {
+        if (session != null) {
+            deckSessions.put(session.getSessionId(), session);
+            setDirty();
+        }
+    }
+
+    public DeckSession getDeckSession(UUID sessionId) {
+        if (sessionId == null) return null;
+        return deckSessions.get(sessionId);
+    }
+
+    public DeckSession getActiveDeckSession(UUID playerUUID) {
+        if (playerUUID == null) return null;
+        for (DeckSession s : deckSessions.values()) {
+            if (s.getPlayerUUID().equals(playerUUID) && s.isActive()) {
+                return s;
+            }
+        }
+        return null;
+    }
+
+    public void removeDeckSession(UUID sessionId) {
+        if (sessionId != null && deckSessions.remove(sessionId) != null) {
+            setDirty();
+        }
     }
 
     // --- Transactional Outbox Methods ---
@@ -285,7 +514,7 @@ public class JackpotSavedData extends SavedData {
         if (transactionId == null) return null;
         for (RewardTransaction tx : pendingTransactions) {
             if (tx.getTransactionId().equals(transactionId)) {
-                return new RewardTransaction(tx.getTransactionId(), tx.getPlayerUUID(), tx.getItems(), tx.isJackpot(), tx.getJackpotAmount(), tx.isJackpotClaimed());
+                return RewardTransaction.fromLines(tx.getTransactionId(), tx.getPlayerUUID(), tx.getLines(), tx.isJackpot(), tx.getJackpotAmount(), tx.isJackpotClaimed());
             }
         }
         return null;
@@ -313,10 +542,25 @@ public class JackpotSavedData extends SavedData {
         List<RewardTransaction> result = new ArrayList<>();
         for (RewardTransaction tx : pendingTransactions) {
             if (tx.getPlayerUUID().equals(playerUUID) && !tx.isEmpty()) {
-                result.add(new RewardTransaction(tx.getTransactionId(), tx.getPlayerUUID(), tx.getItems(), tx.isJackpot(), tx.getJackpotAmount(), tx.isJackpotClaimed()));
+                result.add(RewardTransaction.fromLines(tx.getTransactionId(), tx.getPlayerUUID(), tx.getLines(), tx.isJackpot(), tx.getJackpotAmount(), tx.isJackpotClaimed()));
             }
         }
         return Collections.unmodifiableList(result);
+    }
+
+    public synchronized boolean confirmDeliveredLine(UUID transactionId, UUID lineId) {
+        for (Iterator<RewardTransaction> it = pendingTransactions.iterator(); it.hasNext(); ) {
+            RewardTransaction tx = it.next();
+            if (tx.getTransactionId().equals(transactionId)) {
+                boolean removed = tx.confirmDeliveredLine(lineId);
+                if (tx.isEmpty()) {
+                    it.remove();
+                }
+                setDirty();
+                return removed;
+            }
+        }
+        return false;
     }
 
     public synchronized boolean confirmDeliveredItem(UUID transactionId, ItemStack stack) {

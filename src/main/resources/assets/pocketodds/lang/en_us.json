@@ -107,5 +107,20 @@
   "pocketodds.symbol.emerald": "Emerald",
   "pocketodds.symbol.star": "Star",
   "pocketodds.symbol.skull": "Skull",
-  "pocketodds.symbol.joker": "Joker"
+  "pocketodds.symbol.joker": "Joker",
+
+  "pocketodds.item_bet.bet_changed": "Item Bet set to: %s x %s",
+  "pocketodds.item_bet.not_allowed": "This item cannot be used for betting!",
+  "pocketodds.item_bet.game_not_allowed": "This item cannot be used in this game!",
+  "pocketodds.item_bet.container_forbidden": "Containers with items cannot be used for betting!",
+  "pocketodds.item_bet.damaged_forbidden": "Damaged items are not accepted!",
+  "pocketodds.item_bet.nbt_forbidden": "Items with enchantments or modifications are not accepted!",
+  "pocketodds.item_bet.count_out_of_range": "Item count (%s) is out of allowed range [%s..%s]!",
+  "pocketodds.item_bet.not_enough": "Not enough items for bet! Required %s x %s.",
+  "pocketodds.item_bet.win": "WIN: +%s x %s!",
+  "pocketodds.item_bet.insurance_refund": "Insurance refunded %s x %s from your bet!",
+  "pocketodds.item_bet.jackpot_won": "JACKPOT HIT! Pool: %s chips + %s x %s!",
+  "pocketodds.deck.not_owner": "You are not the owner of this active deck session!",
+  "tooltip.pocketodds.item_bet.bet_info": "Bet: %s x %s (%s credits)",
+  "tooltip.pocketodds.offhand_item_tip": "Hold an allowed item in your offhand to bet with it."
 }

@@ -49,6 +49,48 @@ public class InventoryUtils {
     }
 
     /**
+     * Counts how many items or chips matching the BetSnapshot the player has in inventory.
+     */
+    public static int countMatching(Player player, net.pocketodds.gambling.core.BetSnapshot bet) {
+        if (player == null || bet == null) return 0;
+        int count = 0;
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = player.getInventory().getItem(i);
+            if (!stack.isEmpty() && bet.matches(stack)) {
+                count += stack.getCount();
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Removes the exact betCount items or chips matching the BetSnapshot from the player's inventory.
+     * Returns true if successfully removed, false if insufficient items.
+     */
+    public static boolean removeMatching(Player player, net.pocketodds.gambling.core.BetSnapshot bet) {
+        if (player == null || bet == null) return false;
+        int needed = bet.getBetCount();
+        if (countMatching(player, bet) < needed) {
+            return false;
+        }
+
+        int remaining = needed;
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = player.getInventory().getItem(i);
+            if (!stack.isEmpty() && bet.matches(stack)) {
+                int take = Math.min(stack.getCount(), remaining);
+                stack.shrink(take);
+                remaining -= take;
+                if (remaining <= 0) {
+                    break;
+                }
+            }
+        }
+        player.getInventory().setChanged();
+        return true;
+    }
+
+    /**
      * Safely gives an item to the player. If inventory is full or partially full,
      * remaining items are cleanly dropped at the player's feet without duping.
      */

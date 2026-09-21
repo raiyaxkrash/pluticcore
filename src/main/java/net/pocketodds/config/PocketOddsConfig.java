@@ -2,11 +2,15 @@ package net.pocketodds.config;
 
 import net.minecraftforge.common.ForgeConfigSpec;
 import net.pocketodds.PocketOdds;
+import net.pocketodds.gambling.itembet.ItemBetRegistry;
+import net.pocketodds.gambling.itembet.ItemRewardRegistry;
+
+import java.util.List;
 
 public class PocketOddsConfig {
     public static final ForgeConfigSpec SERVER_SPEC;
     public static final Server SERVER;
-    public static final int CURRENT_CONFIG_VERSION = 2;
+    public static final int CURRENT_CONFIG_VERSION = 3;
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -21,6 +25,15 @@ public class PocketOddsConfig {
     public static void onConfigLoad(net.minecraftforge.fml.event.config.ModConfigEvent event) {
         if (event.getConfig().getSpec() == SERVER_SPEC) {
             migrateLegacyConfigIfNeeded();
+            if (SERVER != null) {
+                ItemBetRegistry.loadConfig(SERVER.allowedItemBets.get());
+                ItemRewardRegistry.loadConfig(
+                        SERVER.slotRewardTable.get(),
+                        SERVER.diceRewardTable.get(),
+                        SERVER.rouletteRewardTable.get(),
+                        SERVER.deckRewardTable.get()
+                );
+            }
         }
     }
 
@@ -59,10 +72,11 @@ public class PocketOddsConfig {
             // Deck of Fate: 1.5->1.25, 2.0->1.5
             if (Math.abs(SERVER.deckFortuneMultiplier.get() - 1.5) < 0.001) { SERVER.deckFortuneMultiplier.set(1.25); migrated = true; }
             if (Math.abs(SERVER.deckRichesMultiplier.get() - 2.0) < 0.001) { SERVER.deckRichesMultiplier.set(1.5); migrated = true; }
-
+        }
+        if (version < 3) {
             SERVER.configVersion.set(CURRENT_CONFIG_VERSION);
             SERVER_SPEC.save();
-            PocketOdds.LOGGER.info("Pocket Odds: Config v1 migrated to v2 (exact old defaults updated: {}).", migrated);
+            PocketOdds.LOGGER.info("Pocket Odds: Config migrated to v3 (item bets and reward tables enabled).");
         }
     }
 
@@ -116,11 +130,24 @@ public class PocketOddsConfig {
         public final ForgeConfigSpec.DoubleValue deckFortuneMultiplier;
         public final ForgeConfigSpec.DoubleValue deckRichesMultiplier;
 
+        // Item betting
+        public final ForgeConfigSpec.ConfigValue<List<? extends String>> allowedItemBets;
+        public final ForgeConfigSpec.ConfigValue<String> itemBetPayoutMode;
+        public final ForgeConfigSpec.IntValue maxItemRewardCap;
+        public final ForgeConfigSpec.DoubleValue bothSameItemWeight;
+        public final ForgeConfigSpec.DoubleValue bothTableWeight;
+
+        // Reward tables
+        public final ForgeConfigSpec.ConfigValue<List<? extends String>> slotRewardTable;
+        public final ForgeConfigSpec.ConfigValue<List<? extends String>> diceRewardTable;
+        public final ForgeConfigSpec.ConfigValue<List<? extends String>> rouletteRewardTable;
+        public final ForgeConfigSpec.ConfigValue<List<? extends String>> deckRewardTable;
+
         public Server(ForgeConfigSpec.Builder builder) {
             builder.push("general");
             configVersion = builder
                     .comment("Configuration version tracker for automatic migrations")
-                    .defineInRange("configVersion", 1, 1, 100);
+                    .defineInRange("configVersion", CURRENT_CONFIG_VERSION, 1, 100);
             cooldownTicks = builder
                     .comment("Cooldown in ticks between slot spins and dice rolls (20 ticks = 1 second)")
                     .defineInRange("cooldownTicks", 30, 5, 200);
@@ -184,6 +211,73 @@ public class PocketOddsConfig {
             builder.push("deck_of_fate");
             deckFortuneMultiplier = builder.defineInRange("deckFortuneMultiplier", 1.25, 1.0, 10.0);
             deckRichesMultiplier = builder.defineInRange("deckRichesMultiplier", 1.5, 1.0, 20.0);
+            builder.pop();
+
+            builder.push("item_bets");
+            allowedItemBets = builder
+                    .comment("List of items allowed for betting.",
+                            "Format: itemId;unitCreditValue;minCount;maxCount;allowedGames;allowNbt;allowDamaged",
+                            "Containers are unconditionally prohibited.")
+                    .defineListAllowEmpty(List.of("allowedItemBets"), () -> List.of(
+                            "minecraft:copper_ingot;1;1;64;SLOT,DICE,ROULETTE,DECK;false;false",
+                            "minecraft:iron_ingot;1;1;64;SLOT,DICE,ROULETTE,DECK;false;false",
+                            "minecraft:gold_ingot;8;1;64;SLOT,DICE,ROULETTE,DECK;false;false",
+                            "minecraft:emerald;16;1;64;SLOT,DICE,ROULETTE,DECK;false;false",
+                            "minecraft:diamond;64;1;64;SLOT,DICE,ROULETTE,DECK;false;false",
+                            "minecraft:netherite_ingot;512;1;16;SLOT,DICE,ROULETTE,DECK;false;false"
+                    ), obj -> obj instanceof String);
+            itemBetPayoutMode = builder
+                    .comment("Payout mode for item bets: SAME_ITEM (return multiplied bet item), REWARD_TABLE (drop from reward table), BOTH (budgeted split)")
+                    .define("itemBetPayoutMode", "SAME_ITEM");
+            maxItemRewardCap = builder
+                    .comment("Maximum total count of items that can be paid out in a single reward")
+                    .defineInRange("maxItemRewardCap", 512, 1, 10000);
+            bothSameItemWeight = builder
+                    .comment("Budget fraction for SAME_ITEM multiplier payout in BOTH mode (0.80 = 80%)")
+                    .defineInRange("bothSameItemWeight", 0.80, 0.0, 1.0);
+            bothTableWeight = builder
+                    .comment("Budget fraction for REWARD_TABLE drop payout in BOTH mode (0.20 = 20%)")
+                    .defineInRange("bothTableWeight", 0.20, 0.0, 1.0);
+            builder.pop();
+
+            builder.push("item_reward_tables");
+            slotRewardTable = builder
+                    .comment("Reward table for Slot machine. Format: itemId;weight;minCount;maxCount;maxCap;creditValue;minBetCredits;maxBetCredits")
+                    .defineListAllowEmpty(List.of("slotRewardTable"), () -> List.of(
+                            "minecraft:iron_ingot;50;2;16;64;1;1;32",
+                            "minecraft:gold_ingot;30;1;8;32;8;8;128",
+                            "minecraft:diamond;15;1;4;16;64;64;1024",
+                            "minecraft:netherite_ingot;3;1;1;4;512;512;100000",
+                            "pocketodds:joker;2;1;1;1;100;16;100000",
+                            "pocketodds:insurance;5;1;1;2;50;8;100000"
+                    ), obj -> obj instanceof String);
+
+            diceRewardTable = builder
+                    .comment("Reward table for Void Dice. Format: itemId;weight;minCount;maxCount;maxCap;creditValue;minBetCredits;maxBetCredits")
+                    .defineListAllowEmpty(List.of("diceRewardTable"), () -> List.of(
+                            "minecraft:iron_ingot;50;2;16;64;1;1;32",
+                            "minecraft:gold_ingot;30;1;8;32;8;8;128",
+                            "minecraft:diamond;15;1;4;16;64;64;1024",
+                            "pocketodds:insurance;5;1;1;2;50;8;100000"
+                    ), obj -> obj instanceof String);
+
+            rouletteRewardTable = builder
+                    .comment("Reward table for Roulette. Format: itemId;weight;minCount;maxCount;maxCap;creditValue;minBetCredits;maxBetCredits")
+                    .defineListAllowEmpty(List.of("rouletteRewardTable"), () -> List.of(
+                            "minecraft:gold_ingot;40;2;8;32;8;8;128",
+                            "minecraft:diamond;20;1;4;16;64;64;1024",
+                            "pocketodds:insurance;5;1;1;2;50;8;100000"
+                    ), obj -> obj instanceof String);
+
+            deckRewardTable = builder
+                    .comment("Reward table for Deck of Fate. Format: itemId;weight;minCount;maxCount;maxCap;creditValue;minBetCredits;maxBetCredits")
+                    .defineListAllowEmpty(List.of("deckRewardTable"), () -> List.of(
+                            "minecraft:iron_ingot;50;2;16;64;1;1;32",
+                            "minecraft:gold_ingot;30;1;8;32;8;8;128",
+                            "minecraft:diamond;15;1;4;16;64;64;1024",
+                            "pocketodds:joker;3;1;1;1;100;16;100000",
+                            "pocketodds:insurance;5;1;1;2;50;8;100000"
+                    ), obj -> obj instanceof String);
             builder.pop();
         }
     }

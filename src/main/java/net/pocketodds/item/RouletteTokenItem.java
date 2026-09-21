@@ -6,6 +6,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.entity.player.Player;
@@ -13,12 +14,24 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
+import net.pocketodds.config.PocketOddsConfig;
 import net.pocketodds.data.JackpotSavedData;
-import net.pocketodds.registration.ModItems;
+import net.pocketodds.gambling.core.BetPreparation;
+import net.pocketodds.gambling.core.BetSnapshot;
+import net.pocketodds.gambling.core.GameType;
+import net.pocketodds.gambling.core.RewardBundle;
+import net.pocketodds.gambling.core.RewardTransactionService;
+import net.pocketodds.gambling.itembet.ItemBetConfigEntry;
+import net.pocketodds.gambling.itembet.ItemBetRegistry;
+import net.pocketodds.gambling.itembet.ItemBetValidator;
+import net.pocketodds.gambling.itembet.ItemRewardRegistry;
+import net.pocketodds.gambling.itembet.PayoutMode;
+import net.pocketodds.util.ChipUtils;
 import net.pocketodds.util.FeedbackEffects;
 import net.pocketodds.util.InventoryUtils;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -28,7 +41,7 @@ public class RouletteTokenItem extends Item {
     );
 
     public RouletteTokenItem(Properties properties) {
-        super(properties.stacksTo(16));
+        super(properties.stacksTo(1));
     }
 
     public static String getBetType(ItemStack stack) {
@@ -75,12 +88,60 @@ public class RouletteTokenItem extends Item {
                 return InteractionResultHolder.fail(stack);
             }
 
-            // Consume 1 token to spin
-            stack.shrink(1);
-            serverPlayer.getCooldowns().addCooldown(this, 20);
+            ItemStack offhand = serverPlayer.getOffhandItem();
+            boolean isOffhandItemBet = !offhand.isEmpty() && !(offhand.getItem() instanceof ChipItem);
 
-            // Add contribution to jackpot
-            JackpotSavedData.get(serverPlayer.serverLevel()).addContribution(16);
+            BetSnapshot betSnapshot;
+            if (isOffhandItemBet) {
+                ItemBetConfigEntry entry = ItemBetRegistry.getEntry(offhand.getItem());
+                int count = entry != null ? Math.min(offhand.getCount(), entry.getMaxCount()) : offhand.getCount();
+                ItemBetValidator.ValidationResult val = ItemBetValidator.validate(offhand, count, entry, GameType.ROULETTE);
+                if (val != ItemBetValidator.ValidationResult.VALID) {
+                    Component errorMsg = switch (val) {
+                        case NOT_ALLOWED_ITEM -> Component.translatable("pocketodds.item_bet.not_allowed");
+                        case GAME_NOT_ALLOWED -> Component.translatable("pocketodds.item_bet.game_not_allowed");
+                        case CONTAINER_FORBIDDEN -> Component.translatable("pocketodds.item_bet.container_forbidden");
+                        case DAMAGED_FORBIDDEN -> Component.translatable("pocketodds.item_bet.damaged_forbidden");
+                        case NBT_OR_ENCHANTS_FORBIDDEN -> Component.translatable("pocketodds.item_bet.nbt_forbidden");
+                        case COUNT_OUT_OF_RANGE -> Component.translatable("pocketodds.item_bet.count_out_of_range", count, entry != null ? entry.getMinCount() : 1, entry != null ? entry.getMaxCount() : 64);
+                        default -> Component.translatable("pocketodds.item_bet.not_allowed");
+                    };
+                    FeedbackEffects.sendActionBar(serverPlayer, errorMsg.copy().withStyle(ChatFormatting.RED));
+                    FeedbackEffects.playSound(serverPlayer, SoundEvents.VILLAGER_NO, 0.8f, 1.0f);
+                    return InteractionResultHolder.fail(stack);
+                }
+                betSnapshot = BetSnapshot.fromItem(offhand, count, entry.getUnitCreditValue());
+            } else {
+                ChipTier tier = (!offhand.isEmpty() && offhand.getItem() instanceof ChipItem chipItem)
+                        ? chipItem.getTier()
+                        : ChipTier.GOLD;
+                int count = (!offhand.isEmpty()) ? Math.min(offhand.getCount(), 16) : 1;
+                betSnapshot = BetSnapshot.fromChip(tier, count);
+            }
+
+            JackpotSavedData jackpotData = JackpotSavedData.get(serverPlayer.serverLevel());
+
+            // 2PC Step 1: PREPARE
+            BetPreparation prep = RewardTransactionService.prepareBet(serverPlayer, GameType.ROULETTE, betSnapshot, jackpotData);
+            prep.setAssociatedId(prep.getPreparationId());
+            jackpotData.savePreparedBet(prep);
+
+            // 2PC Step 2: DEBIT
+            boolean debited = RewardTransactionService.debitBet(prep, serverPlayer, jackpotData);
+            if (!debited) {
+                if (betSnapshot.isItemBet()) {
+                    FeedbackEffects.sendActionBar(serverPlayer,
+                            Component.translatable("pocketodds.item_bet.not_enough", betSnapshot.getBetCount(), betSnapshot.getItemPrototype().getHoverName()).withStyle(ChatFormatting.RED));
+                } else {
+                    FeedbackEffects.sendActionBar(serverPlayer,
+                            Component.translatable("pocketodds.not_enough_chips", betSnapshot.getBetCount(), betSnapshot.getChipTier().getColorCode() + betSnapshot.getChipTier().getId()).withStyle(ChatFormatting.RED));
+                }
+                FeedbackEffects.playSound(serverPlayer, SoundEvents.VILLAGER_NO, 0.8f, 1.0f);
+                return InteractionResultHolder.fail(stack);
+            }
+
+            // Apply cooldown (token is permanent and NOT shrunk!)
+            serverPlayer.getCooldowns().addCooldown(this, 20);
 
             // Roll 0..36
             int number = level.random.nextInt(37);
@@ -91,24 +152,54 @@ public class RouletteTokenItem extends Item {
             String playerBet = getBetType(stack);
             boolean won = playerBet.equalsIgnoreCase(outcomeType);
 
-            ChatFormatting outcomeColor = isZero ? ChatFormatting.GREEN : (isRed ? ChatFormatting.RED : ChatFormatting.DARK_GRAY);
+            List<ItemStack> rewardItems = new ArrayList<>();
+            double mult = 0.0;
 
             if (won) {
-                int rewardChips = isZero ? 35 : 2; // 35x for Green, 2x for Red/Black
-                InventoryUtils.giveOrDrop(serverPlayer, new ItemStack(ModItems.GOLD_CHIP.get(), rewardChips));
-
-                FeedbackEffects.sendActionBar(serverPlayer,
-                        Component.literal("[ 🎡 " + number + " " + outcomeType + " ] ")
-                                .append(Component.translatable("pocketodds.roulette.win", "+" + rewardChips + " Gold Chips").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD)));
-                FeedbackEffects.playSound(serverPlayer, SoundEvents.PLAYER_LEVELUP, 1.0f, 1.2f);
-                FeedbackEffects.spawnParticles(serverPlayer, ParticleTypes.FIREWORK, 20, 0.4, 0.4, 0.4, 0.1);
+                mult = isZero ? 35.0 : 2.0;
+                rewardItems.addAll(calculateRouletteRewards(betSnapshot, mult));
             } else {
                 if (InventoryUtils.hasInsurance(serverPlayer)) {
                     InventoryUtils.consumeInsurance(serverPlayer);
-                    InventoryUtils.giveOrDrop(serverPlayer, new ItemStack(ModItems.COPPER_CHIP.get(), 4));
+                    double rate = PocketOddsConfig.SERVER != null ? PocketOddsConfig.SERVER.insuranceRefundRate.get() : 0.50;
+                    int refund = Math.max(1, (int) Math.round(betSnapshot.getBetCount() * rate));
+                    rewardItems.addAll(createRewardList(betSnapshot, refund));
+                }
+            }
+
+            // Pre-commit outcome to transactional outbox BEFORE delivery
+            RewardBundle bundle = new RewardBundle(rewardItems, 0L, false);
+            if (!rewardItems.isEmpty()) {
+                RewardTransactionService.enqueueRewardBundle(jackpotData, prep.getPreparationId(), serverPlayer.getUUID(), bundle);
+            }
+
+            // 2PC Step 3: COMMIT
+            RewardTransactionService.commitBet(prep, jackpotData);
+
+            // Deliver outbox transactions
+            RewardTransactionService.deliverPendingTransactions(serverPlayer.getUUID(), serverPlayer, jackpotData, InventoryUtils::giveOrDrop);
+
+            // Visual feedback
+            if (won) {
+                int totalOut = (int) Math.round(betSnapshot.getBetCount() * mult);
+                Component winMsg = betSnapshot.isItemBet()
+                        ? Component.translatable("pocketodds.item_bet.win", totalOut, betSnapshot.getItemPrototype().getHoverName())
+                        : Component.translatable("pocketodds.roulette.win", "+" + totalOut + " " + betSnapshot.getChipTier().getId());
+
+                FeedbackEffects.sendActionBar(serverPlayer,
+                        Component.literal("[ 🎡 " + number + " " + outcomeType + " ] ")
+                                .append(winMsg.copy().withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD)));
+                FeedbackEffects.playSound(serverPlayer, SoundEvents.PLAYER_LEVELUP, 1.0f, 1.2f);
+                FeedbackEffects.spawnParticles(serverPlayer, ParticleTypes.FIREWORK, 20, 0.4, 0.4, 0.4, 0.1);
+            } else {
+                if (!rewardItems.isEmpty()) {
+                    int refund = Math.max(1, (int) Math.round(betSnapshot.getBetCount() * 0.50));
+                    Component insMsg = betSnapshot.isItemBet()
+                            ? Component.translatable("pocketodds.item_bet.insurance_refund", refund, betSnapshot.getItemPrototype().getHoverName())
+                            : Component.translatable("pocketodds.insurance.triggered", refund);
                     FeedbackEffects.sendActionBar(serverPlayer,
                             Component.literal("[ 🎡 " + number + " " + outcomeType + " ] ")
-                                    .append(Component.translatable("pocketodds.insurance.triggered", "4 copper").withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD)));
+                                    .append(insMsg.copy().withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD)));
                     FeedbackEffects.playSound(serverPlayer, SoundEvents.SHIELD_BLOCK, 1.0f, 1.0f);
                 } else {
                     FeedbackEffects.sendActionBar(serverPlayer,
@@ -120,6 +211,74 @@ public class RouletteTokenItem extends Item {
         }
 
         return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
+    }
+
+    private static List<ItemStack> createRewardList(BetSnapshot bet, int count) {
+        List<ItemStack> list = new ArrayList<>();
+        if (bet.isChipBet()) {
+            list.addAll(ChipUtils.splitChips(bet.getChipTier().getItem(), count));
+        } else {
+            ItemStack proto = bet.getItemPrototype();
+            int max = proto.getMaxStackSize();
+            int rem = count;
+            while (rem > 0) {
+                int take = Math.min(rem, max);
+                ItemStack s = proto.copy();
+                s.setCount(take);
+                list.add(s);
+                rem -= take;
+            }
+        }
+        return list;
+    }
+
+    private static List<ItemStack> calculateRouletteRewards(BetSnapshot bet, double multiplier) {
+        List<ItemStack> list = new ArrayList<>();
+        int count = Math.max(1, (int) Math.round(bet.getBetCount() * multiplier));
+
+        if (bet.isChipBet()) {
+            list.addAll(ChipUtils.splitChips(bet.getChipTier().getItem(), count));
+            return list;
+        }
+
+        PayoutMode mode = PayoutMode.SAME_ITEM;
+        if (PocketOddsConfig.SERVER != null && PocketOddsConfig.isConfigLoaded()) {
+            mode = PayoutMode.fromId(PocketOddsConfig.SERVER.itemBetPayoutMode.get());
+        }
+        int globalCap = (PocketOddsConfig.SERVER != null && PocketOddsConfig.isConfigLoaded())
+                ? PocketOddsConfig.SERVER.maxItemRewardCap.get() : 512;
+
+        if (mode == PayoutMode.SAME_ITEM) {
+            list.addAll(createRewardList(bet, Math.min(count, globalCap)));
+        } else if (mode == PayoutMode.REWARD_TABLE) {
+            long budgetCredits = Math.max(1L, Math.round(bet.getTotalCreditValue() * multiplier));
+            list.addAll(ItemRewardRegistry.getTable(GameType.ROULETTE).rollRewards(
+                    RandomSource.create(), budgetCredits, bet.getTotalCreditValue(), globalCap
+            ));
+        } else if (mode == PayoutMode.BOTH) {
+            double sameItemWeight = (PocketOddsConfig.SERVER != null && PocketOddsConfig.isConfigLoaded())
+                    ? PocketOddsConfig.SERVER.bothSameItemWeight.get() : 0.80;
+            double tableWeight = (PocketOddsConfig.SERVER != null && PocketOddsConfig.isConfigLoaded())
+                    ? PocketOddsConfig.SERVER.bothTableWeight.get() : 0.20;
+
+            long totalWinCredits = Math.max(1L, Math.round(bet.getTotalCreditValue() * multiplier));
+            double rawTableBudget = totalWinCredits * tableWeight;
+            long tableBase = (long) Math.floor(rawTableBudget);
+            long tableBudgetCredits = tableBase + (RandomSource.create().nextDouble() < (rawTableBudget - tableBase) ? 1L : 0L);
+
+            double sameTarget = count * sameItemWeight;
+            int sameItemBase = (int) Math.floor(sameTarget);
+            int sameItemCount = sameItemBase + (RandomSource.create().nextDouble() < (sameTarget - sameItemBase) ? 1 : 0);
+            if (sameItemCount > 0) {
+                list.addAll(createRewardList(bet, Math.min(sameItemCount, globalCap)));
+            }
+            if (tableBudgetCredits > 0L) {
+                list.addAll(ItemRewardRegistry.getTable(GameType.ROULETTE).rollRewards(
+                        RandomSource.create(), tableBudgetCredits, bet.getTotalCreditValue(), globalCap
+                ));
+            }
+        }
+        return list;
     }
 
     @Override
@@ -135,6 +294,7 @@ public class RouletteTokenItem extends Item {
         tooltip.add(Component.translatable("tooltip.pocketodds.roulette.bet", Component.literal(betType).withStyle(color)).withStyle(ChatFormatting.YELLOW));
         tooltip.add(Component.translatable("tooltip.pocketodds.roulette.controls_shift").withStyle(ChatFormatting.GRAY));
         tooltip.add(Component.translatable("tooltip.pocketodds.roulette.controls_right").withStyle(ChatFormatting.GREEN));
+        tooltip.add(Component.translatable("tooltip.pocketodds.offhand_item_tip").withStyle(ChatFormatting.DARK_GRAY));
         super.appendHoverText(stack, level, tooltip, flag);
     }
 }
