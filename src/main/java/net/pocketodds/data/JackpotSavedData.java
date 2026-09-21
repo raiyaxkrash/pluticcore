@@ -22,10 +22,20 @@ public class JackpotSavedData extends SavedData {
         private final UUID transactionId;
         private final UUID playerUUID;
         private final List<ItemStack> items;
+        private final boolean jackpot;
+        private final long jackpotAmount;
+        private boolean jackpotClaimed;
 
         public RewardTransaction(UUID transactionId, UUID playerUUID, List<ItemStack> items) {
+            this(transactionId, playerUUID, items, false, 0L, false);
+        }
+
+        public RewardTransaction(UUID transactionId, UUID playerUUID, List<ItemStack> items, boolean jackpot, long jackpotAmount, boolean jackpotClaimed) {
             this.transactionId = transactionId != null ? transactionId : UUID.randomUUID();
             this.playerUUID = playerUUID;
+            this.jackpot = jackpot;
+            this.jackpotAmount = jackpotAmount;
+            this.jackpotClaimed = jackpotClaimed;
             this.items = new ArrayList<>();
             if (items != null) {
                 for (ItemStack stack : items) {
@@ -42,6 +52,22 @@ public class JackpotSavedData extends SavedData {
 
         public UUID getPlayerUUID() {
             return playerUUID;
+        }
+
+        public boolean isJackpot() {
+            return jackpot;
+        }
+
+        public long getJackpotAmount() {
+            return jackpotAmount;
+        }
+
+        public boolean isJackpotClaimed() {
+            return jackpotClaimed;
+        }
+
+        void setJackpotClaimed(boolean claimed) {
+            this.jackpotClaimed = claimed;
         }
 
         public List<ItemStack> getItems() {
@@ -75,6 +101,11 @@ public class JackpotSavedData extends SavedData {
             CompoundTag tag = new CompoundTag();
             tag.putUUID("TransactionId", transactionId);
             tag.putUUID("PlayerUUID", playerUUID);
+            if (jackpot) {
+                tag.putBoolean("Jackpot", true);
+                tag.putLong("JackpotAmount", jackpotAmount);
+                tag.putBoolean("JackpotClaimed", jackpotClaimed);
+            }
             ListTag listTag = new ListTag();
             for (ItemStack stack : items) {
                 listTag.add(stack.save(new CompoundTag()));
@@ -86,6 +117,9 @@ public class JackpotSavedData extends SavedData {
         public static RewardTransaction fromNbt(CompoundTag tag) {
             UUID txId = tag.contains("TransactionId") ? tag.getUUID("TransactionId") : UUID.randomUUID();
             UUID pId = tag.getUUID("PlayerUUID");
+            boolean jackpot = tag.getBoolean("Jackpot");
+            long jackpotAmount = tag.getLong("JackpotAmount");
+            boolean jackpotClaimed = tag.getBoolean("JackpotClaimed");
             ListTag listTag = tag.getList("Items", Tag.TAG_COMPOUND);
             List<ItemStack> items = new ArrayList<>();
             for (int i = 0; i < listTag.size(); i++) {
@@ -94,7 +128,7 @@ public class JackpotSavedData extends SavedData {
                     items.add(stack);
                 }
             }
-            return new RewardTransaction(txId, pId, items);
+            return new RewardTransaction(txId, pId, items, jackpot, jackpotAmount, jackpotClaimed);
         }
     }
 
@@ -247,11 +281,39 @@ public class JackpotSavedData extends SavedData {
         return false;
     }
 
+    public synchronized RewardTransaction getTransaction(UUID transactionId) {
+        if (transactionId == null) return null;
+        for (RewardTransaction tx : pendingTransactions) {
+            if (tx.getTransactionId().equals(transactionId)) {
+                return new RewardTransaction(tx.getTransactionId(), tx.getPlayerUUID(), tx.getItems(), tx.isJackpot(), tx.getJackpotAmount(), tx.isJackpotClaimed());
+            }
+        }
+        return null;
+    }
+
+    public synchronized boolean claimJackpotForTransaction(UUID transactionId) {
+        if (transactionId == null) return false;
+        for (RewardTransaction tx : pendingTransactions) {
+            if (tx.getTransactionId().equals(transactionId)) {
+                if (tx.isJackpot() && !tx.isJackpotClaimed()) {
+                    long baseAmount = (PocketOddsConfig.SERVER != null && PocketOddsConfig.isConfigLoaded())
+                            ? PocketOddsConfig.SERVER.jackpotBaseAmount.get() : 100L;
+                    this.jackpotAmount = baseAmount;
+                    tx.setJackpotClaimed(true);
+                    setDirty();
+                    return true;
+                }
+                return false;
+            }
+        }
+        return false;
+    }
+
     public synchronized List<RewardTransaction> getPendingTransactions(UUID playerUUID) {
         List<RewardTransaction> result = new ArrayList<>();
         for (RewardTransaction tx : pendingTransactions) {
             if (tx.getPlayerUUID().equals(playerUUID) && !tx.isEmpty()) {
-                result.add(new RewardTransaction(tx.getTransactionId(), tx.getPlayerUUID(), tx.getItems()));
+                result.add(new RewardTransaction(tx.getTransactionId(), tx.getPlayerUUID(), tx.getItems(), tx.isJackpot(), tx.getJackpotAmount(), tx.isJackpotClaimed()));
             }
         }
         return Collections.unmodifiableList(result);

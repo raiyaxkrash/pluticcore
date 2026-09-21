@@ -47,7 +47,7 @@
 
   "tooltip.pocketodds.insurance.title": "Insurance Policy",
   "tooltip.pocketodds.insurance.desc": "Single-use protection item.",
-  "tooltip.pocketodds.insurance.usage": "Automatically consumed on total loss to refund 50% of your bet.",
+  "tooltip.pocketodds.insurance.usage": "Automatically consumed on ordinary loss to refund 50% of your bet (does not protect against disaster).",
 
   "tooltip.pocketodds.cursed_card.title": "Cursed Card",
   "tooltip.pocketodds.cursed_card.desc": "Drawn from a tragic gamble in the Deck of Fate.",

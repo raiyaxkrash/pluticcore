@@ -157,13 +157,21 @@ public class PocketSlotItem extends Item {
                 }
             }
 
+            // Игровое правило: Страховка защищает только от обычного проигрыша и НЕ защищает от Проклятия Азарта (трёх черепов / катастрофы).
+            // Проверяем и списываем страховку строго после попытки спасения Джокером.
+            boolean insured = false;
+            if (!outcome.isSkulls() && !outcome.isWin() && !outcome.isJackpot() && InventoryUtils.hasInsurance(serverPlayer)) {
+                InventoryUtils.consumeInsurance(serverPlayer);
+                insured = true;
+            }
+
             // Apply cooldown
             int cd = PocketOddsConfig.SERVER != null ? PocketOddsConfig.SERVER.cooldownTicks.get() : 30;
             serverPlayer.getCooldowns().addCooldown(this, cd);
 
-            // Register session with finalized symbols and outcome
+            // Register session with finalized symbols, outcome and insurance state
             JackpotSavedData jackpotData = JackpotSavedData.get(serverPlayer.serverLevel());
-            ActiveRollTracker.addSession(new SlotRollSession(serverPlayer.getUUID(), serverPlayer.getScoreboardName(), betTier, betCount, symbols, outcome), jackpotData);
+            ActiveRollTracker.addSession(new SlotRollSession(serverPlayer.getUUID(), serverPlayer.getScoreboardName(), betTier, betCount, symbols, outcome, insured), jackpotData);
 
             // Initial feedback
             FeedbackEffects.playSound(serverPlayer, SoundEvents.NOTE_BLOCK_HAT.get(), 1.0f, 1.0f);

@@ -109,19 +109,43 @@ public class ActiveRollTracker {
         }
     }
 
-    public static void deliverPendingTransactions(ServerPlayer player, JackpotSavedData data, net.pocketodds.util.RewardDeliverySink sink) {
+    public static boolean deliverPendingTransactions(UUID playerUUID, @org.jetbrains.annotations.Nullable ServerPlayer player, JackpotSavedData data, net.pocketodds.util.RewardDeliverySink sink) {
+        if (data == null) return false;
+        if (player == null && sink == null) return false;
         net.pocketodds.util.RewardDeliverySink actualSink = (sink != null) ? sink : InventoryUtils::giveOrDrop;
-        List<JackpotSavedData.RewardTransaction> pending = data.getPendingTransactions(player.getUUID());
-        if (!pending.isEmpty()) {
-            for (JackpotSavedData.RewardTransaction tx : pending) {
-                for (ItemStack stack : tx.getItems()) {
+
+        List<JackpotSavedData.RewardTransaction> pending = data.getPendingTransactions(playerUUID);
+        if (pending.isEmpty()) return true;
+
+        boolean allDelivered = true;
+        for (JackpotSavedData.RewardTransaction tx : pending) {
+            boolean txFailed = false;
+            for (ItemStack stack : tx.getItems()) {
+                try {
                     actualSink.deliver(player, stack);
                     data.confirmDeliveredItem(tx.getTransactionId(), stack);
+                } catch (Exception e) {
+                    PocketOdds.LOGGER.error("Failed to deliver item {} in transaction {} to player {}: {}",
+                            stack, tx.getTransactionId(), (player != null ? player.getScoreboardName() : playerUUID), e.getMessage(), e);
+                    txFailed = true;
+                    allDelivered = false;
+                    break;
                 }
+            }
+            if (!txFailed) {
                 data.removePendingTransaction(tx.getTransactionId());
             }
+        }
+
+        if (allDelivered && player != null) {
             player.sendSystemMessage(Component.translatable("pocketodds.reconnect.rewards_delivered").withStyle(ChatFormatting.GREEN, ChatFormatting.BOLD));
             FeedbackEffects.playSound(player, SoundEvents.PLAYER_LEVELUP, 1.0f, 1.0f);
         }
+        return allDelivered;
+    }
+
+    public static boolean deliverPendingTransactions(ServerPlayer player, JackpotSavedData data, net.pocketodds.util.RewardDeliverySink sink) {
+        if (player == null) return false;
+        return deliverPendingTransactions(player.getUUID(), player, data, sink);
     }
 }

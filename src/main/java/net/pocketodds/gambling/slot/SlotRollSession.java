@@ -28,6 +28,8 @@ import java.util.List;
 import java.util.UUID;
 
 public class SlotRollSession {
+    private static final org.slf4j.Logger LOGGER = com.mojang.logging.LogUtils.getLogger();
+
     private final UUID rollId;
     private final UUID playerUUID;
     private final String playerName;
@@ -35,23 +37,33 @@ public class SlotRollSession {
     private final int betCount;
     private final SlotSymbol[] symbols;
     private final SlotOutcome outcome;
+    private final boolean insured;
+    private long wonJackpotAmount = 0L;
     private int tick = 0;
     private boolean finished = false;
     private boolean finalized = false;
 
     public SlotRollSession(UUID playerUUID, ChipTier betTier, int betCount, SlotSymbol[] symbols, SlotOutcome outcome) {
-        this(UUID.randomUUID(), playerUUID, null, betTier, betCount, symbols, outcome);
+        this(UUID.randomUUID(), playerUUID, null, betTier, betCount, symbols, outcome, false);
     }
 
     public SlotRollSession(UUID rollId, UUID playerUUID, ChipTier betTier, int betCount, SlotSymbol[] symbols, SlotOutcome outcome) {
-        this(rollId, playerUUID, null, betTier, betCount, symbols, outcome);
+        this(rollId, playerUUID, null, betTier, betCount, symbols, outcome, false);
     }
 
     public SlotRollSession(UUID playerUUID, String playerName, ChipTier betTier, int betCount, SlotSymbol[] symbols, SlotOutcome outcome) {
-        this(UUID.randomUUID(), playerUUID, playerName, betTier, betCount, symbols, outcome);
+        this(UUID.randomUUID(), playerUUID, playerName, betTier, betCount, symbols, outcome, false);
     }
 
     public SlotRollSession(UUID rollId, UUID playerUUID, String playerName, ChipTier betTier, int betCount, SlotSymbol[] symbols, SlotOutcome outcome) {
+        this(rollId, playerUUID, playerName, betTier, betCount, symbols, outcome, false);
+    }
+
+    public SlotRollSession(UUID playerUUID, String playerName, ChipTier betTier, int betCount, SlotSymbol[] symbols, SlotOutcome outcome, boolean insured) {
+        this(UUID.randomUUID(), playerUUID, playerName, betTier, betCount, symbols, outcome, insured);
+    }
+
+    public SlotRollSession(UUID rollId, UUID playerUUID, String playerName, ChipTier betTier, int betCount, SlotSymbol[] symbols, SlotOutcome outcome, boolean insured) {
         this.rollId = rollId != null ? rollId : UUID.randomUUID();
         this.playerUUID = playerUUID;
         this.playerName = playerName;
@@ -59,6 +71,7 @@ public class SlotRollSession {
         this.betCount = betCount;
         this.symbols = symbols;
         this.outcome = outcome;
+        this.insured = insured;
     }
 
     public UUID getRollId() {
@@ -87,6 +100,18 @@ public class SlotRollSession {
 
     public SlotOutcome getOutcome() {
         return outcome;
+    }
+
+    public boolean isInsured() {
+        return insured;
+    }
+
+    public long getWonJackpotAmount() {
+        return wonJackpotAmount;
+    }
+
+    public void setWonJackpotAmount(long wonJackpotAmount) {
+        this.wonJackpotAmount = wonJackpotAmount;
     }
 
     public boolean isFinished() {
@@ -119,6 +144,10 @@ public class SlotRollSession {
         tag.putString("Sym2", symbols[2].name());
         tag.putInt("Tick", tick);
         tag.putBoolean("Finalized", finalized);
+        tag.putBoolean("Insured", insured);
+        if (wonJackpotAmount > 0L) {
+            tag.putLong("WonJackpotAmount", wonJackpotAmount);
+        }
         return tag;
     }
 
@@ -133,8 +162,12 @@ public class SlotRollSession {
         SlotSymbol s2 = SlotSymbol.valueOf(tag.getString("Sym2"));
         SlotSymbol[] syms = new SlotSymbol[]{s0, s1, s2};
         SlotOutcome outcome = SlotEvaluator.evaluate(syms, config);
-        SlotRollSession session = new SlotRollSession(rollId, uuid, playerName, tier, betCount, syms, outcome);
+        boolean insured = tag.getBoolean("Insured");
+        SlotRollSession session = new SlotRollSession(rollId, uuid, playerName, tier, betCount, syms, outcome, insured);
         session.setTick(tag.getInt("Tick"));
+        if (tag.contains("WonJackpotAmount")) {
+            session.setWonJackpotAmount(tag.getLong("WonJackpotAmount"));
+        }
         if (tag.getBoolean("Finalized")) {
             session.finalized = true;
             session.finished = true;
@@ -189,8 +222,14 @@ public class SlotRollSession {
      * Sets this.finalized = true STRICTLY AFTER successful commit.
      */
     public void prepareAndCommitOutcome(JackpotSavedData jackpotData, String playerNameFallback) {
+        java.util.Objects.requireNonNull(jackpotData, "jackpotData must not be null for prepareAndCommitOutcome");
+
         // Idempotency: check both in-memory flag and persistent outbox presence
-        if (this.finalized || (jackpotData != null && jackpotData.hasPendingTransaction(rollId))) {
+        if (this.finalized || jackpotData.hasPendingTransaction(rollId)) {
+            // Safely complete unfulfilled jackpot pool reset if previous attempt crashed right after enqueuing transaction
+            jackpotData.claimJackpotForTransaction(rollId);
+            jackpotData.removeActiveSession(playerUUID);
+            jackpotData.setDirty();
             this.finalized = true;
             return;
         }
@@ -201,7 +240,10 @@ public class SlotRollSession {
         // 1. Grand Jackpot: Exactly 3 Stars
         if (outcome.isJackpot()) {
             isJackpotHit = true;
-            long jackpotPoolAmount = jackpotData != null ? jackpotData.getJackpotAmount() : 100L;
+            long jackpotPoolAmount = (this.wonJackpotAmount > 0L)
+                    ? this.wonJackpotAmount
+                    : jackpotData.getJackpotAmount();
+            this.wonJackpotAmount = jackpotPoolAmount;
             int betMultiplierPayout = (int) Math.round(betCount * outcome.getMultiplier());
 
             rewardStacks.addAll(ChipUtils.convertAmountToChips(jackpotPoolAmount));
@@ -225,7 +267,7 @@ public class SlotRollSession {
             tokenTag.putString("Date", java.time.LocalDate.now().toString());
             rewardStacks.add(jackpotToken);
         } else if (outcome.isSkulls()) {
-            // Disaster handled in delivery/effects phase
+            // Disaster handled in delivery/effects phase (insurance does not protect against disaster)
         } else if (outcome.isWin()) {
             // 3. Regular Win
             int payoutAmount = (int) Math.round(betCount * outcome.getMultiplier());
@@ -241,24 +283,33 @@ public class SlotRollSession {
                 }
                 rewardStacks.add(new ItemStack(jokerItem, 1));
             }
+        } else {
+            // 4. Regular Loss - Check Insurance
+            // Игровое правило: Страховка защищает только от обычного проигрыша и НЕ защищает от Проклятия Азарта (трёх черепов / катастрофы).
+            if (this.insured) {
+                double refundRate = (PocketOddsConfig.SERVER != null && PocketOddsConfig.isConfigLoaded())
+                        ? PocketOddsConfig.SERVER.insuranceRefundRate.get() : 0.50;
+                int refundAmount = Math.max(1, (int) Math.round(betCount * refundRate));
+                rewardStacks.addAll(ChipUtils.splitChips(betTier.getItem(), refundAmount));
+            }
         }
 
-        if (jackpotData != null) {
-            // STEP 1: Persist reward into transactional outbox before claiming jackpot or removing session
-            if (!rewardStacks.isEmpty()) {
-                JackpotSavedData.RewardTransaction tx = new JackpotSavedData.RewardTransaction(rollId, playerUUID, rewardStacks);
-                jackpotData.enqueueRewardTransaction(tx);
-            }
-
-            // STEP 2: Claim jackpot pool safely after reward is securely enqueued
-            if (isJackpotHit) {
-                jackpotData.claimJackpot();
-            }
-
-            // STEP 3: Remove active session and commit state
-            jackpotData.removeActiveSession(playerUUID);
-            jackpotData.setDirty();
+        // STEP 1: Persist reward into transactional outbox before claiming jackpot or removing session
+        if (!rewardStacks.isEmpty()) {
+            JackpotSavedData.RewardTransaction tx = new JackpotSavedData.RewardTransaction(
+                    rollId, playerUUID, rewardStacks, isJackpotHit, (isJackpotHit ? this.wonJackpotAmount : 0L), false
+            );
+            jackpotData.enqueueRewardTransaction(tx);
         }
+
+        // STEP 2: Claim jackpot pool atomically and mark transaction claimed
+        if (isJackpotHit) {
+            jackpotData.claimJackpotForTransaction(rollId);
+        }
+
+        // STEP 3: Remove active session and commit state
+        jackpotData.removeActiveSession(playerUUID);
+        jackpotData.setDirty();
 
         // STEP 4: Set finalized flag strictly after transactional persistence
         this.finalized = true;
@@ -268,17 +319,26 @@ public class SlotRollSession {
      * Phase 2: Deliver committed rewards to online player and trigger feedback effects.
      */
     public void deliverCommittedReward(ServerPlayer player, RewardDeliverySink sink, JackpotSavedData jackpotData, MinecraftServer server) {
-        RewardDeliverySink actualSink = (sink != null) ? sink : InventoryUtils::giveOrDrop;
-
-        if (jackpotData != null && player != null) {
+        if (jackpotData != null && (player != null || sink != null)) {
+            RewardDeliverySink actualSink = (sink != null) ? sink : InventoryUtils::giveOrDrop;
             List<JackpotSavedData.RewardTransaction> pending = jackpotData.getPendingTransactions(playerUUID);
             for (JackpotSavedData.RewardTransaction tx : pending) {
                 if (tx.getTransactionId().equals(rollId)) {
+                    boolean txFailed = false;
                     for (ItemStack stack : tx.getItems()) {
-                        actualSink.deliver(player, stack);
-                        jackpotData.confirmDeliveredItem(rollId, stack);
+                        try {
+                            actualSink.deliver(player, stack);
+                            jackpotData.confirmDeliveredItem(rollId, stack);
+                        } catch (Exception e) {
+                            LOGGER.error("Failed to deliver reward item {} for roll {} to player {}: {}",
+                                    stack, rollId, (player != null ? player.getScoreboardName() : playerUUID), e.getMessage(), e);
+                            txFailed = true;
+                            break;
+                        }
                     }
-                    jackpotData.removePendingTransaction(rollId);
+                    if (!txFailed) {
+                        jackpotData.removePendingTransaction(rollId);
+                    }
                     break;
                 }
             }
@@ -286,16 +346,16 @@ public class SlotRollSession {
 
         if (player != null) {
             if (outcome.isJackpot()) {
-                long jackpotPoolAmount = jackpotData != null ? jackpotData.getJackpotAmount() : 100L;
+                long displayAmount = (this.wonJackpotAmount > 0L) ? this.wonJackpotAmount : 100L;
                 int betMultiplierPayout = (int) Math.round(betCount * outcome.getMultiplier());
                 FeedbackEffects.sendActionBar(player,
-                        Component.translatable("pocketodds.jackpot.won", jackpotPoolAmount + " + " + betMultiplierPayout).withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
+                        Component.translatable("pocketodds.jackpot.won", displayAmount + " + " + betMultiplierPayout).withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
                 FeedbackEffects.playSound(player, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.0f);
                 FeedbackEffects.spawnParticles(player, ParticleTypes.FIREWORK, 40, 0.5, 0.8, 0.5, 0.15);
 
                 if (server != null) {
                     server.getPlayerList().broadcastSystemMessage(
-                            Component.translatable("pocketodds.jackpot.broadcast", player.getScoreboardName(), jackpotPoolAmount).withStyle(ChatFormatting.LIGHT_PURPLE, ChatFormatting.BOLD),
+                            Component.translatable("pocketodds.jackpot.broadcast", player.getScoreboardName(), displayAmount).withStyle(ChatFormatting.LIGHT_PURPLE, ChatFormatting.BOLD),
                             false
                     );
                 }
@@ -325,15 +385,10 @@ public class SlotRollSession {
                 FeedbackEffects.spawnParticles(player, ParticleTypes.HAPPY_VILLAGER, 20, 0.5, 0.5, 0.5, 0.05);
             } else {
                 // Loss - Check Insurance
-                if (InventoryUtils.hasInsurance(player)) {
-                    InventoryUtils.consumeInsurance(player);
+                if (this.insured) {
                     double refundRate = (PocketOddsConfig.SERVER != null && PocketOddsConfig.isConfigLoaded())
                             ? PocketOddsConfig.SERVER.insuranceRefundRate.get() : 0.50;
                     int refundAmount = Math.max(1, (int) Math.round(betCount * refundRate));
-                    List<ItemStack> refundStacks = ChipUtils.splitChips(betTier.getItem(), refundAmount);
-                    for (ItemStack stack : refundStacks) {
-                        actualSink.deliver(player, stack);
-                    }
                     FeedbackEffects.sendActionBar(player, Component.translatable("pocketodds.insurance.triggered", refundAmount).withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD));
                     FeedbackEffects.playSound(player, SoundEvents.SHIELD_BLOCK, 1.0f, 1.0f);
                     FeedbackEffects.spawnParticles(player, ParticleTypes.TOTEM_OF_UNDYING, 15, 0.3, 0.5, 0.3, 0.1);
@@ -348,6 +403,10 @@ public class SlotRollSession {
     public void finalizeOutcome(MinecraftServer server, ServerPlayer player) {
         ServerLevel overworld = (server != null) ? server.overworld() : null;
         JackpotSavedData jackpotData = (overworld != null) ? JackpotSavedData.get(overworld) : null;
+        if (jackpotData == null) {
+            LOGGER.error("Cannot finalize roll session {}: JackpotSavedData is null (overworld unavailable)!", rollId);
+            return;
+        }
 
         String playerNameFallback = null;
         if (player != null) {

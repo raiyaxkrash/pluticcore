@@ -12,6 +12,7 @@ import net.pocketodds.data.JackpotSavedData;
 import net.pocketodds.gambling.slot.SlotOutcome;
 import net.pocketodds.gambling.slot.SlotRollSession;
 import net.pocketodds.gambling.slot.SlotSymbol;
+import net.pocketodds.gambling.tracker.ActiveRollTracker;
 import net.pocketodds.item.ChipTier;
 import net.pocketodds.item.JackpotTokenItem;
 import net.pocketodds.util.ChipUtils;
@@ -32,6 +33,14 @@ public class MechanicsTest {
         Bootstrap.bootStrap();
         if (net.minecraft.core.registries.BuiltInRegistries.ITEM instanceof net.minecraft.core.MappedRegistry<?> mapped) {
             mapped.unfreeze();
+        }
+        if (net.minecraftforge.registries.ForgeRegistries.ITEMS instanceof net.minecraftforge.registries.ForgeRegistry<net.minecraft.world.item.Item> forgeReg) {
+            forgeReg.unfreeze();
+            net.minecraft.resources.ResourceLocation tokenLoc = new net.minecraft.resources.ResourceLocation("pocketodds", "jackpot_token");
+            if (!forgeReg.containsKey(tokenLoc)) {
+                forgeReg.register(tokenLoc, new JackpotTokenItem(new net.minecraft.world.item.Item.Properties()));
+            }
+            forgeReg.freeze();
         }
     }
 
@@ -240,17 +249,9 @@ public class MechanicsTest {
             }
         };
 
-        // Simulate crash on 2nd stack inside try-catch to model real JVM/server crash
-        try {
-            List<JackpotSavedData.RewardTransaction> current = data.getPendingTransactions(playerUUID);
-            for (ItemStack stack : current.get(0).getItems()) {
-                failingSink.deliver(null, stack);
-                data.confirmDeliveredItem(txId, stack);
-            }
-            Assertions.fail("Should have thrown simulated crash exception");
-        } catch (RuntimeException e) {
-            Assertions.assertEquals("Simulated crash between giveOrDrop and confirmDeliveredItem!", e.getMessage());
-        }
+        // Call REAL production delivery method: must handle exception cleanly without propagating out!
+        boolean allDelivered = ActiveRollTracker.deliverPendingTransactions(playerUUID, null, data, failingSink);
+        Assertions.assertFalse(allDelivered, "Delivery must report partial delivery when sink throws!");
 
         // Invariant 1: First item (Diamond) was delivered and confirmed
         Assertions.assertEquals(1, deliveredStacks.size());
@@ -262,12 +263,10 @@ public class MechanicsTest {
         Assertions.assertEquals(1, afterFailure.get(0).getItems().size());
         Assertions.assertEquals(Items.EMERALD, afterFailure.get(0).getItems().get(0).getItem());
 
-        // Invariant 3: Retry with normal sink delivers ONLY the second item without duplicate Diamonds
+        // Invariant 3: Retry with real production method and normal sink delivers ONLY the second item without duplicates
         RewardDeliverySink normalSink = (player, stack) -> deliveredStacks.add(stack.copy());
-        for (ItemStack stack : afterFailure.get(0).getItems()) {
-            normalSink.deliver(null, stack);
-            data.confirmDeliveredItem(txId, stack);
-        }
+        boolean retryDelivered = ActiveRollTracker.deliverPendingTransactions(playerUUID, null, data, normalSink);
+        Assertions.assertTrue(retryDelivered, "Retry must deliver remaining items successfully!");
 
         Assertions.assertTrue(data.getPendingTransactions(playerUUID).isEmpty(), "Outbox queue must be empty after complete delivery!");
         Assertions.assertEquals(2, deliveredStacks.size());
@@ -276,8 +275,11 @@ public class MechanicsTest {
 
     @Test
     public void testJackpotTokenTrophyBehavior() {
-        JackpotTokenItem tokenItem = new JackpotTokenItem(new net.minecraft.world.item.Item.Properties());
-        ItemStack trophy = new ItemStack(Items.GOLD_NUGGET);
+        JackpotTokenItem tokenItem = (JackpotTokenItem) net.minecraftforge.registries.ForgeRegistries.ITEMS.getValue(new net.minecraft.resources.ResourceLocation("pocketodds", "jackpot_token"));
+        if (tokenItem == null) {
+            tokenItem = new JackpotTokenItem(new net.minecraft.world.item.Item.Properties());
+        }
+        ItemStack trophy = new ItemStack(tokenItem);
         trophy.getOrCreateTag().putString("Winner", "Steve");
         trophy.getOrCreateTag().putLong("JackpotAmount", 2500L);
         trophy.getOrCreateTag().putString("Date", "2026-09-21");
@@ -312,8 +314,8 @@ public class MechanicsTest {
         Assertions.assertTrue(foundAmount, "Translation key for amount must be present in tooltip!");
         Assertions.assertTrue(foundDate, "Translation key for date must be present in tooltip!");
 
-        // Test uninitialized token fallback
-        ItemStack emptyToken = new ItemStack(Items.GOLD_NUGGET);
+        // Test uninitialized token fallback with real JackpotTokenItem
+        ItemStack emptyToken = new ItemStack(tokenItem);
         List<Component> emptyTooltips = new ArrayList<>();
         tokenItem.appendHoverText(emptyToken, null, emptyTooltips, TooltipFlag.NORMAL);
         boolean foundDesc = false;
@@ -325,6 +327,114 @@ public class MechanicsTest {
             }
         }
         Assertions.assertTrue(foundDesc, "Uninitialized token must contain default description key!");
+    }
+
+    @Test
+    public void testAtomicJackpotClaimForTransaction() {
+        JackpotSavedData data = new JackpotSavedData(1000L);
+        UUID playerUUID = UUID.randomUUID();
+        UUID rollId = UUID.randomUUID();
+
+        List<ItemStack> items = new ArrayList<>();
+        items.add(new ItemStack(Items.DIAMOND, 1));
+        JackpotSavedData.RewardTransaction tx = new JackpotSavedData.RewardTransaction(
+                rollId, playerUUID, items, true, 1000L, false
+        );
+        data.enqueueRewardTransaction(tx);
+
+        // First claim: resets pool to base (100) and marks claimed
+        boolean claimed = data.claimJackpotForTransaction(rollId);
+        Assertions.assertTrue(claimed);
+        Assertions.assertEquals(100L, data.getJackpotAmount());
+
+        JackpotSavedData.RewardTransaction updatedTx = data.getTransaction(rollId);
+        Assertions.assertNotNull(updatedTx);
+        Assertions.assertTrue(updatedTx.isJackpotClaimed());
+
+        // New bets come in
+        data.addContribution(500L);
+        long poolWithBets = data.getJackpotAmount();
+        Assertions.assertTrue(poolWithBets > 100L);
+
+        // Second claim attempt for the same rollId: must be a no-op and not destroy new bets!
+        boolean secondClaim = data.claimJackpotForTransaction(rollId);
+        Assertions.assertFalse(secondClaim, "Second claim attempt must not reset pool!");
+        Assertions.assertEquals(poolWithBets, data.getJackpotAmount(), "New bets must be preserved!");
+    }
+
+    @Test
+    public void testPrepareAndCommitOutcomeRequiresNonNullJackpotData() {
+        SlotSymbol[] symbols = new SlotSymbol[]{SlotSymbol.CHERRY, SlotSymbol.IRON, SlotSymbol.GOLD};
+        SlotOutcome outcome = new SlotOutcome(symbols, false, false, false, null, 0, 0.0);
+        SlotRollSession session = new SlotRollSession(UUID.randomUUID(), "Steve", ChipTier.COPPER, 1, symbols, outcome, false);
+
+        Assertions.assertThrows(NullPointerException.class, () -> {
+            session.prepareAndCommitOutcome(null, "Steve");
+        });
+        Assertions.assertFalse(session.isFinalized(), "Session must not be finalized after exception!");
+    }
+
+    @Test
+    public void testInsuranceLossCommittedToOutbox() {
+        JackpotSavedData data = new JackpotSavedData(100L);
+        UUID playerUUID = UUID.randomUUID();
+        UUID rollId = UUID.randomUUID();
+        SlotSymbol[] symbols = new SlotSymbol[]{SlotSymbol.CHERRY, SlotSymbol.IRON, SlotSymbol.GOLD};
+        SlotOutcome outcome = new SlotOutcome(symbols, false, false, false, null, 0, 0.0);
+
+        // Insured loss: bet 10 copper chips
+        SlotRollSession session = new SlotRollSession(rollId, playerUUID, "Steve", ChipTier.COPPER, 10, symbols, outcome, true);
+        session.prepareAndCommitOutcome(data, "Steve");
+
+        Assertions.assertTrue(session.isFinalized());
+        List<JackpotSavedData.RewardTransaction> pending = data.getPendingTransactions(playerUUID);
+        Assertions.assertEquals(1, pending.size(), "Insurance refund must be committed to outbox!");
+        Assertions.assertEquals(rollId, pending.get(0).getTransactionId());
+
+        int totalRefundChips = pending.get(0).getItems().stream().mapToInt(ItemStack::getCount).sum();
+        Assertions.assertEquals(5, totalRefundChips, "50% of 10 chips bet = 5 chips refund!");
+    }
+
+    @Test
+    public void testInsuranceNotTriggeredOnDisaster() {
+        JackpotSavedData data = new JackpotSavedData(100L);
+        UUID playerUUID = UUID.randomUUID();
+        UUID rollId = UUID.randomUUID();
+        SlotSymbol[] symbols = new SlotSymbol[]{SlotSymbol.SKULL, SlotSymbol.SKULL, SlotSymbol.SKULL};
+        SlotOutcome outcome = new SlotOutcome(symbols, false, true, false, SlotSymbol.SKULL, 3, 0.0);
+
+        // Insured disaster: rule states insurance does NOT protect against disaster
+        SlotRollSession session = new SlotRollSession(rollId, playerUUID, "Steve", ChipTier.COPPER, 10, symbols, outcome, true);
+        session.prepareAndCommitOutcome(data, "Steve");
+
+        Assertions.assertTrue(session.isFinalized());
+        List<JackpotSavedData.RewardTransaction> pending = data.getPendingTransactions(playerUUID);
+        Assertions.assertTrue(pending.isEmpty(), "Insurance must not commit refund on disaster!");
+    }
+
+    @Test
+    public void testWonJackpotAmountPreservedAfterPoolReset() {
+        JackpotSavedData data = new JackpotSavedData(2500L);
+        UUID playerUUID = UUID.randomUUID();
+        UUID rollId = UUID.randomUUID();
+        SlotSymbol[] symbols = new SlotSymbol[]{SlotSymbol.STAR, SlotSymbol.STAR, SlotSymbol.STAR};
+        SlotOutcome outcome = new SlotOutcome(symbols, true, false, false, SlotSymbol.STAR, 3, 10.0);
+
+        SlotRollSession session = new SlotRollSession(rollId, playerUUID, "Steve", ChipTier.COPPER, 1, symbols, outcome, false);
+        session.prepareAndCommitOutcome(data, "Steve");
+
+        // Pool was reset to 100
+        Assertions.assertEquals(100L, data.getJackpotAmount());
+
+        // But session preserved the won jackpot amount!
+        Assertions.assertEquals(2500L, session.getWonJackpotAmount());
+
+        // Check NBT serialization preserves wonJackpotAmount
+        net.minecraft.nbt.CompoundTag tag = session.toNbt();
+        Assertions.assertEquals(2500L, tag.getLong("WonJackpotAmount"));
+
+        SlotRollSession restored = SlotRollSession.fromNbt(tag, null);
+        Assertions.assertEquals(2500L, restored.getWonJackpotAmount());
     }
 
     @Test

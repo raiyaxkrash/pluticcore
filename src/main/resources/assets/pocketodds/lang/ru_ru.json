@@ -47,7 +47,7 @@
 
   "tooltip.pocketodds.insurance.title": "Страховой полис",
   "tooltip.pocketodds.insurance.desc": "Одноразовая защита от риска.",
-  "tooltip.pocketodds.insurance.usage": "Автоматически расходуется при полном проигрыше, возвращая 50% ставки.",
+  "tooltip.pocketodds.insurance.usage": "Автоматически расходуется при обычном проигрыше, возвращая 50% ставки (не защищает от катастрофы).",
 
   "tooltip.pocketodds.cursed_card.title": "Проклятая карта",
   "tooltip.pocketodds.cursed_card.desc": "Получена в результате поражения в Колоде Судьбы.",
