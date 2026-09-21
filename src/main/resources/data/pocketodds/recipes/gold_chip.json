@@ -1,0 +1,16 @@
+﻿{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "GCG",
+    "CGC",
+    "GCG"
+  ],
+  "key": {
+    "G": { "item": "minecraft:gold_ingot" },
+    "C": { "item": "pocketodds:copper_chip" }
+  },
+  "result": {
+    "item": "pocketodds:gold_chip",
+    "count": 4
+  }
+}

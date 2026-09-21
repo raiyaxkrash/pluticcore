@@ -1,0 +1,41 @@
+﻿================================================================================
+                         POCKET ODDS - CHANGELOG
+================================================================================
+
+Version 1.0.0 (2026-09-21)
+--------------------------
+* Initial release of Pocket Odds for Minecraft 1.20.1 / Forge 47.x.
+* Inventory-Only Casino System:
+  - 12 new items registered: 4 Chip Tiers (Copper, Gold, Diamond, Netherite),
+    Pocket Slot, Void Dice, Deck of Fate, Roulette Token, Wild Joker,
+    Insurance Policy, Cursed Card, and Grand Jackpot Trophy.
+  - Custom Creative Tab: 'Slots' (Слоты) with Gold Chip icon.
+  - Zero-GUI design: action bar animations, sound effects, particle feedback.
+* Reliability & Balance:
+  - Strict economic balancing across all 4 games:
+    * Pocket Slot: RTP ~96.77% (tested over 1,000,000 spins).
+    * Void Dice: RTP ~88.85% (tested over 1,000,000 rolls with bet 1).
+    * Deck of Fate: RTP ~95.04% first draw chip return with strict 35% bust rate.
+    * Roulette Token: European 37-pocket roulette (97.3% Red/Black, 94.6% Green).
+  - Transactional Outbox Pattern for reward distribution:
+    * Rewards buffered in SavedData before session deletion and jackpot reset.
+    * Item-by-item confirmation delivery guarantees at-least-once reliability.
+    * Reconnecting players automatically receive undelivered rewards.
+  - Slot Roll Session idempotency & persistence:
+    * Unfinished spins safely resume after server reboot or player reconnect.
+    * Active sessions strictly removed only after successful outbox commit.
+  - Deck of Fate Currency Lock:
+    * Chip tier locked into NBT upon round start to prevent offhand swap exploits.
+  - Wild Joker Mechanic:
+    * Holding Wild Joker in inventory rescues losing spins and 3-skulls disasters
+      by substituting the optimal symbol for maximum payout. Existing wins
+      preserve the Joker.
+  - Grand Jackpot Trophy Token:
+    * Converts jackpot token into a commemorative trophy recording winner name,
+      date, and jackpot amount in NBT. Right click displays live server pool.
+  - Safe Drop:
+    * Split large jackpot payouts into stacks <= 64; cleanly dropped at feet
+      if inventory is full without duping or voiding items.
+  - Automatic Config Migration:
+    * Legacy v1 configs automatically upgraded to v2 balanced defaults without
+      overwriting custom administrator values.

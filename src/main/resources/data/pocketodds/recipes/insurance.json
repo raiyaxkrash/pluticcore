@@ -1,0 +1,17 @@
+﻿{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " P ",
+    "PGP",
+    " E "
+  ],
+  "key": {
+    "P": { "item": "minecraft:paper" },
+    "G": { "item": "pocketodds:gold_chip" },
+    "E": { "item": "minecraft:emerald" }
+  },
+  "result": {
+    "item": "pocketodds:insurance",
+    "count": 1
+  }
+}

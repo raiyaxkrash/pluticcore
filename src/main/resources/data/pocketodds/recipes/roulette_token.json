@@ -1,0 +1,17 @@
+﻿{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " R ",
+    "RIR",
+    " C "
+  ],
+  "key": {
+    "R": { "item": "minecraft:redstone" },
+    "I": { "item": "minecraft:iron_ingot" },
+    "C": { "item": "pocketodds:gold_chip" }
+  },
+  "result": {
+    "item": "pocketodds:roulette_token",
+    "count": 1
+  }
+}

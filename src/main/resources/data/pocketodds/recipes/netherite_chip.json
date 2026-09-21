@@ -1,0 +1,16 @@
+﻿{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " D ",
+    "DND",
+    " D "
+  ],
+  "key": {
+    "N": { "item": "minecraft:netherite_ingot" },
+    "D": { "item": "pocketodds:diamond_chip" }
+  },
+  "result": {
+    "item": "pocketodds:netherite_chip",
+    "count": 4
+  }
+}

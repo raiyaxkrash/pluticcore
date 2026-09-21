@@ -1,0 +1,18 @@
+﻿{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "GLG",
+    "GRG",
+    "CCC"
+  ],
+  "key": {
+    "G": { "item": "minecraft:gold_ingot" },
+    "L": { "item": "minecraft:lever" },
+    "R": { "item": "minecraft:redstone" },
+    "C": { "item": "pocketodds:copper_chip" }
+  },
+  "result": {
+    "item": "pocketodds:pocket_slot",
+    "count": 1
+  }
+}

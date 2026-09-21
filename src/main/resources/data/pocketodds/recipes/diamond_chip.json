@@ -1,0 +1,16 @@
+﻿{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "DGD",
+    "GDG",
+    "DGD"
+  ],
+  "key": {
+    "D": { "item": "minecraft:diamond" },
+    "G": { "item": "pocketodds:gold_chip" }
+  },
+  "result": {
+    "item": "pocketodds:diamond_chip",
+    "count": 4
+  }
+}
