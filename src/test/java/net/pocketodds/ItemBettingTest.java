@@ -16,6 +16,8 @@ import net.pocketodds.gambling.slot.SlotSymbol;
 import net.pocketodds.item.ChipTier;
 import net.pocketodds.item.DeckOfFateItem;
 import net.pocketodds.item.JackpotTokenItem;
+import net.pocketodds.item.RouletteTokenItem;
+import net.pocketodds.item.VoidDiceItem;
 import net.pocketodds.util.ChipUtils;
 import net.pocketodds.util.RewardDeliverySink;
 import org.junit.jupiter.api.Assertions;
@@ -59,9 +61,9 @@ public class ItemBettingTest {
         Assertions.assertEquals(BetPreparation.PreparationStatus.PREPARED, data.getPreparedBet(prep.getPreparationId()).getStatus());
         Assertions.assertEquals(rollId, prep.getAssociatedId());
 
-        // Step 2: Debit transition
-        prep.setStatus(BetPreparation.PreparationStatus.DEBITED);
-        data.savePreparedBet(prep);
+        // Step 2: Debit transition via production RewardTransactionService
+        boolean debited = RewardTransactionService.debitBet(prep, data, true);
+        Assertions.assertTrue(debited);
         Assertions.assertEquals(BetPreparation.PreparationStatus.DEBITED, data.getPreparedBet(prep.getPreparationId()).getStatus());
 
         // Step 3: Commit via production RewardTransactionService
@@ -378,21 +380,23 @@ public class ItemBettingTest {
     @Test
     public void testSameItemPayoutMultipliers() {
         BetSnapshot bet1 = BetSnapshot.fromItem(new ItemStack(Items.IRON_INGOT), 2, 1L);
-        // Multiplier 0.5x on 2 items -> 1 item
-        int payout05 = (int) Math.round(bet1.getBetCount() * 0.5);
-        Assertions.assertEquals(1, payout05);
 
-        // Multiplier 1.0x on 2 items -> 2 items
-        int payout10 = (int) Math.round(bet1.getBetCount() * 1.0);
-        Assertions.assertEquals(2, payout10);
+        // Production calculation via VoidDiceItem.calculateDiceRewards
+        List<ItemStack> pay05 = VoidDiceItem.calculateDiceRewards(bet1, 0.5);
+        Assertions.assertEquals(1, pay05.get(0).getCount());
 
-        // Multiplier 1.5x on 2 items -> 3 items
-        int payout15 = (int) Math.round(bet1.getBetCount() * 1.5);
-        Assertions.assertEquals(3, payout15);
+        List<ItemStack> pay10 = VoidDiceItem.calculateDiceRewards(bet1, 1.0);
+        Assertions.assertEquals(2, pay10.get(0).getCount());
 
-        // Multiplier 2.0x on 2 items -> 4 items
-        int payout20 = (int) Math.round(bet1.getBetCount() * 2.0);
-        Assertions.assertEquals(4, payout20);
+        List<ItemStack> pay15 = VoidDiceItem.calculateDiceRewards(bet1, 1.5);
+        Assertions.assertEquals(3, pay15.get(0).getCount());
+
+        List<ItemStack> pay20 = VoidDiceItem.calculateDiceRewards(bet1, 2.0);
+        Assertions.assertEquals(4, pay20.get(0).getCount());
+
+        // Production calculation via RouletteTokenItem.calculateRouletteRewards
+        List<ItemStack> payRoulette20 = RouletteTokenItem.calculateRouletteRewards(bet1, 2.0);
+        Assertions.assertEquals(4, payRoulette20.get(0).getCount());
     }
 
     @Test
@@ -479,5 +483,99 @@ public class ItemBettingTest {
         Assertions.assertEquals(1, rewards35x.size());
         Assertions.assertEquals(Items.DIAMOND, rewards35x.get(0).getItem());
         Assertions.assertEquals(35, rewards35x.get(0).getCount());
+    }
+
+    @Test
+    public void testInstantGameLossSettlementPreventsRefundOnCrash() {
+        JackpotSavedData beforeCrash = new JackpotSavedData(100L);
+        UUID playerUUID = UUID.randomUUID();
+        BetSnapshot bet = BetSnapshot.fromItem(new ItemStack(Items.DIAMOND), 2, 64L);
+
+        // Step 1: Prepare and debit bet
+        BetPreparation prep = RewardTransactionService.prepareBet(playerUUID, GameType.DICE, null, bet, beforeCrash);
+        prep.setAssociatedId(prep.getPreparationId());
+        RewardTransactionService.debitBet(prep, beforeCrash, true);
+
+        // Step 2: Instant game lost (0 rewards). Settle and commit bet atomically.
+        RewardBundle emptyBundle = new RewardBundle(Collections.emptyList(), 0L, false);
+        beforeCrash.settleAndCommitBet(prep, prep.getPreparationId(), playerUUID, emptyBundle);
+
+        // Preparation map is cleared
+        Assertions.assertNull(beforeCrash.getPreparedBet(prep.getPreparationId()));
+        // Outbox contains zero-reward settlement transaction
+        Assertions.assertTrue(beforeCrash.hasPendingTransaction(prep.getPreparationId()));
+
+        // Step 3: Simulate server crash and world reload
+        CompoundTag tag = new CompoundTag();
+        beforeCrash.save(tag);
+        JackpotSavedData afterCrash = JackpotSavedData.load(tag);
+
+        // Crash recovery must NOT create a refund for the lost bet
+        List<JackpotSavedData.RewardTransaction> txs = afterCrash.getPendingTransactions(playerUUID);
+        int totalItemCount = txs.stream().mapToInt(t -> t.getItems().size()).sum();
+        Assertions.assertEquals(0, totalItemCount, "Lost bet must NEVER be refunded upon server crash recovery!");
+
+        // Delivering pending transactions cleanly removes the empty settlement transaction without giving items
+        List<ItemStack> delivered = new ArrayList<>();
+        boolean deliveredOk = RewardTransactionService.deliverPendingTransactions(playerUUID, null, afterCrash, (p, s) -> delivered.add(s.copy()));
+        Assertions.assertTrue(deliveredOk);
+        Assertions.assertTrue(delivered.isEmpty(), "Zero items should be delivered for lost settlement transaction!");
+        Assertions.assertFalse(afterCrash.hasPendingTransaction(prep.getPreparationId()));
+    }
+
+    @Test
+    public void testDeckCashoutAtomicCommitAndCrashRecovery() {
+        JackpotSavedData beforeCrash = new JackpotSavedData(100L);
+        UUID playerUUID = UUID.randomUUID();
+        BetSnapshot bet = BetSnapshot.fromItem(new ItemStack(Items.GOLD_INGOT), 4, 8L);
+
+        DeckSession session = new DeckSession(playerUUID, bet);
+        session.setPotUnits(5); // 5 * 4 = 20 gold ingots
+        beforeCrash.saveDeckSession(session);
+
+        UUID sessionId = session.getSessionId();
+        UUID cashoutTxId = UUID.nameUUIDFromBytes(("deck_cashout:" + sessionId).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        // Simulate crash right when CASHOUT_COMMITTED is set but outbox transaction was not saved to disk
+        session.setStatus(DeckSession.Status.CASHOUT_COMMITTED);
+        session.setActive(false);
+        beforeCrash.saveDeckSession(session);
+
+        // Crash and reload
+        CompoundTag tag = new CompoundTag();
+        beforeCrash.save(tag);
+        JackpotSavedData afterCrash = JackpotSavedData.load(tag);
+
+        // Crash recovery must automatically restore the missing cashout transaction from session pot!
+        Assertions.assertTrue(afterCrash.hasPendingTransaction(cashoutTxId),
+                "CASHOUT_COMMITTED deck session missing from outbox must be restored on recovery!");
+
+        List<JackpotSavedData.RewardTransaction> txs = afterCrash.getPendingTransactions(playerUUID);
+        Assertions.assertEquals(1, txs.size());
+        Assertions.assertEquals(Items.GOLD_INGOT, txs.get(0).getItems().get(0).getItem());
+        Assertions.assertEquals(20, txs.get(0).getItems().get(0).getCount());
+    }
+
+    @Test
+    public void testDeckRewardTableIntegration() {
+        ItemRewardEntry diamondEntry = new ItemRewardEntry(
+                new net.minecraft.resources.ResourceLocation("minecraft:diamond"),
+                50, 64, 64L, 1L, 10000L
+        );
+        ItemRewardTable deckTable = new ItemRewardTable(List.of(diamondEntry));
+        ItemRewardRegistry.loadConfig(List.of(), List.of(), List.of(), List.of("minecraft:diamond;50;64;64;1;10000"));
+
+        UUID playerUUID = UUID.randomUUID();
+        // Bet: 8 gold ingots = 64 credits. Pot units = 2 -> total win credits = 128 credits.
+        // In REWARD_TABLE mode, 128 credits / 64 = exactly 2 diamonds.
+        BetSnapshot bet = BetSnapshot.fromItem(new ItemStack(Items.GOLD_INGOT), 8, 8L);
+        DeckSession session = new DeckSession(playerUUID, bet);
+        session.setPotUnits(2);
+
+        long totalWinCredits = (long) session.getPotUnits() * bet.getTotalCreditValue();
+        List<ItemStack> rewards = deckTable.rollRewards(net.minecraft.util.RandomSource.create(42L), totalWinCredits, bet.getTotalCreditValue(), 64);
+        Assertions.assertEquals(1, rewards.size());
+        Assertions.assertEquals(Items.DIAMOND, rewards.get(0).getItem());
+        Assertions.assertEquals(2, rewards.get(0).getCount());
     }
 }

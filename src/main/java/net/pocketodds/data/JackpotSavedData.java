@@ -9,7 +9,9 @@ import net.minecraft.world.level.saveddata.SavedData;
 import net.pocketodds.config.PocketOddsConfig;
 import net.pocketodds.gambling.core.BetPreparation;
 import net.pocketodds.gambling.core.DeckSession;
+import net.pocketodds.gambling.core.RewardBundle;
 import net.pocketodds.gambling.core.RewardLine;
+import net.pocketodds.item.DeckOfFateItem;
 import net.pocketodds.util.ChipUtils;
 
 import java.util.*;
@@ -66,6 +68,17 @@ public class JackpotSavedData extends SavedData {
                 }
             }
             return tx;
+        }
+
+        public static RewardTransaction fromBundle(UUID transactionId, UUID playerUUID, RewardBundle bundle) {
+            if (bundle == null || bundle.isEmpty()) {
+                return new RewardTransaction(transactionId, playerUUID, Collections.emptyList(), false, 0L, false);
+            }
+            List<ItemStack> items = new ArrayList<>(bundle.getItems());
+            if (bundle.isJackpot() && bundle.getJackpotCredits() > 0L) {
+                items.addAll(ChipUtils.convertAmountToChips(bundle.getJackpotCredits()));
+            }
+            return new RewardTransaction(transactionId, playerUUID, items, bundle.isJackpot(), bundle.getJackpotCredits(), false);
         }
 
         public UUID getTransactionId() {
@@ -268,6 +281,21 @@ public class JackpotSavedData extends SavedData {
                 try {
                     DeckSession session = DeckSession.fromNbt(deckTag.getCompound(key));
                     data.deckSessions.put(session.getSessionId(), session);
+
+                    // Recovery for CASHOUT_COMMITTED sessions where crash happened before outbox enqueue was completed
+                    if (session.getStatus() == DeckSession.Status.CASHOUT_COMMITTED && session.getPotUnits() > 0) {
+                        UUID cashoutTxId = UUID.nameUUIDFromBytes(("deck_cashout:" + session.getSessionId()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        if (!data.hasPendingTransaction(cashoutTxId)) {
+                            LOGGER.warn("Pocket Odds Crash Recovery: Restoring missing cashout transaction {} for session {} of player {}",
+                                    cashoutTxId, session.getSessionId(), session.getPlayerUUID());
+                            List<ItemStack> cashoutItems = DeckOfFateItem.calculateDeckCashoutRewards(session);
+                            if (!cashoutItems.isEmpty()) {
+                                data.enqueueRewardTransaction(RewardTransaction.fromBundle(
+                                        cashoutTxId, session.getPlayerUUID(), new RewardBundle(cashoutItems, 0L, false)
+                                ));
+                            }
+                        }
+                    }
                 } catch (Exception e) {
                     LOGGER.error("Pocket Odds: Failed to load deck session [key={}]: {}", key, e.getMessage(), e);
                 }
@@ -354,9 +382,7 @@ public class JackpotSavedData extends SavedData {
         if (!pendingTransactions.isEmpty()) {
             ListTag txList = new ListTag();
             for (RewardTransaction tx : pendingTransactions) {
-                if (!tx.isEmpty()) {
-                    txList.add(tx.toNbt());
-                }
+                txList.add(tx.toNbt());
             }
             tag.put("PendingTransactions", txList);
         }
@@ -386,12 +412,13 @@ public class JackpotSavedData extends SavedData {
             tag.put("PreparedBets", prepTag);
         }
 
-        // Save deck sessions
+        // Save deck sessions (active or pending cashout completion)
         if (!deckSessions.isEmpty()) {
             CompoundTag deckTag = new CompoundTag();
             for (Map.Entry<UUID, DeckSession> entry : deckSessions.entrySet()) {
-                if (entry.getValue().isActive()) {
-                    deckTag.put(entry.getKey().toString(), entry.getValue().toNbt());
+                DeckSession s = entry.getValue();
+                if (s.isActive() || s.getStatus() == DeckSession.Status.CASHOUT_COMMITTED) {
+                    deckTag.put(entry.getKey().toString(), s.toNbt());
                 }
             }
             tag.put("DeckSessions", deckTag);
@@ -488,8 +515,31 @@ public class JackpotSavedData extends SavedData {
 
     // --- Transactional Outbox Methods ---
 
+    public synchronized void commitDeckCashout(UUID sessionId, UUID cashoutTxId, UUID playerUUID, RewardBundle bundle) {
+        DeckSession session = deckSessions.get(sessionId);
+        if (session != null) {
+            session.setStatus(DeckSession.Status.CASHOUT_COMMITTED);
+            session.setActive(false);
+        }
+        if (cashoutTxId != null && playerUUID != null && bundle != null && !bundle.isEmpty()) {
+            enqueueRewardTransaction(RewardTransaction.fromBundle(cashoutTxId, playerUUID, bundle));
+        }
+        setDirty();
+    }
+
+    public synchronized void settleAndCommitBet(BetPreparation prep, UUID txId, UUID playerUUID, RewardBundle bundle) {
+        if (prep != null) {
+            prep.setStatus(BetPreparation.PreparationStatus.COMMITTED);
+            preparedBets.remove(prep.getPreparationId());
+        }
+        if (txId != null && playerUUID != null) {
+            enqueueRewardTransaction(RewardTransaction.fromBundle(txId, playerUUID, bundle));
+        }
+        setDirty();
+    }
+
     public synchronized void enqueueRewardTransaction(RewardTransaction transaction) {
-        if (transaction != null && !transaction.isEmpty()) {
+        if (transaction != null) {
             for (RewardTransaction existing : pendingTransactions) {
                 if (existing.getTransactionId().equals(transaction.getTransactionId())) {
                     return; // Idempotent: transaction with this rollId/transactionId is already recorded
@@ -541,7 +591,7 @@ public class JackpotSavedData extends SavedData {
     public synchronized List<RewardTransaction> getPendingTransactions(UUID playerUUID) {
         List<RewardTransaction> result = new ArrayList<>();
         for (RewardTransaction tx : pendingTransactions) {
-            if (tx.getPlayerUUID().equals(playerUUID) && !tx.isEmpty()) {
+            if (tx.getPlayerUUID().equals(playerUUID)) {
                 result.add(RewardTransaction.fromLines(tx.getTransactionId(), tx.getPlayerUUID(), tx.getLines(), tx.isJackpot(), tx.getJackpotAmount(), tx.isJackpotClaimed()));
             }
         }

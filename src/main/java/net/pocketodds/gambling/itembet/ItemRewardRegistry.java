@@ -43,10 +43,12 @@ public class ItemRewardRegistry {
                 continue;
             }
             try {
-                // Format: "itemId;weight;minCount;maxCount;maxCap;creditValue;minBetCredits;maxBetCredits"
+                // Supported formats:
+                // 6-field: "itemId;weight;maxCap;creditValue;minBetCredits;maxBetCredits"
+                // 8-field (legacy): "itemId;weight;minCount;maxCount;maxCap;creditValue;minBetCredits;maxBetCredits"
                 String[] parts = raw.split(";");
-                if (parts.length < 8) {
-                    LOGGER.warn("Pocket Odds: Invalid reward table entry format for {}: '{}' (requires 8 fields)", gameType, raw);
+                if (parts.length < 6) {
+                    LOGGER.warn("Pocket Odds: Invalid reward table entry format for {}: '{}' (requires at least 6 fields: itemId;weight;maxCap;creditValue;minBetCredits;maxBetCredits)", gameType, raw);
                     continue;
                 }
 
@@ -64,15 +66,29 @@ public class ItemRewardRegistry {
                     continue;
                 }
 
-                int weight = Integer.parseInt(parts[1].trim());
-                int minCount = Integer.parseInt(parts[2].trim());
-                int maxCount = Integer.parseInt(parts[3].trim());
-                int maxCap = Integer.parseInt(parts[4].trim());
-                long creditValue = Long.parseLong(parts[5].trim());
-                long minBetCredits = Long.parseLong(parts[6].trim());
-                long maxBetCredits = Long.parseLong(parts[7].trim());
+                int weight;
+                int maxCap;
+                long creditValue;
+                long minBetCredits;
+                long maxBetCredits;
 
-                ItemRewardEntry entry = new ItemRewardEntry(itemId, weight, minCount, maxCount, maxCap, creditValue, minBetCredits, maxBetCredits);
+                if (parts.length >= 8) {
+                    // Legacy 8-field format
+                    weight = Integer.parseInt(parts[1].trim());
+                    maxCap = Integer.parseInt(parts[4].trim());
+                    creditValue = Long.parseLong(parts[5].trim());
+                    minBetCredits = Long.parseLong(parts[6].trim());
+                    maxBetCredits = Long.parseLong(parts[7].trim());
+                } else {
+                    // New clean 6-field format
+                    weight = Integer.parseInt(parts[1].trim());
+                    maxCap = Integer.parseInt(parts[2].trim());
+                    creditValue = Long.parseLong(parts[3].trim());
+                    minBetCredits = Long.parseLong(parts[4].trim());
+                    maxBetCredits = Long.parseLong(parts[5].trim());
+                }
+
+                ItemRewardEntry entry = new ItemRewardEntry(itemId, weight, maxCap, creditValue, minBetCredits, maxBetCredits);
                 entries.add(entry);
             } catch (Exception e) {
                 LOGGER.warn("Pocket Odds: Failed to parse reward table line for {} '{}': {}", gameType, raw, e.getMessage());

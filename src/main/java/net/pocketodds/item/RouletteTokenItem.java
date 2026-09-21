@@ -167,14 +167,9 @@ public class RouletteTokenItem extends Item {
                 }
             }
 
-            // Pre-commit outcome to transactional outbox BEFORE delivery
+            // 2PC Step 3: COMMIT with settlement (records outcome transaction even on loss to prevent crash recovery refund)
             RewardBundle bundle = new RewardBundle(rewardItems, 0L, false);
-            if (!rewardItems.isEmpty()) {
-                RewardTransactionService.enqueueRewardBundle(jackpotData, prep.getPreparationId(), serverPlayer.getUUID(), bundle);
-            }
-
-            // 2PC Step 3: COMMIT
-            RewardTransactionService.commitBet(prep, jackpotData);
+            jackpotData.settleAndCommitBet(prep, prep.getPreparationId(), serverPlayer.getUUID(), bundle);
 
             // Deliver outbox transactions
             RewardTransactionService.deliverPendingTransactions(serverPlayer.getUUID(), serverPlayer, jackpotData, InventoryUtils::giveOrDrop);
@@ -232,7 +227,7 @@ public class RouletteTokenItem extends Item {
         return list;
     }
 
-    private static List<ItemStack> calculateRouletteRewards(BetSnapshot bet, double multiplier) {
+    public static List<ItemStack> calculateRouletteRewards(BetSnapshot bet, double multiplier) {
         List<ItemStack> list = new ArrayList<>();
         int count = Math.max(1, (int) Math.round(bet.getBetCount() * multiplier));
 

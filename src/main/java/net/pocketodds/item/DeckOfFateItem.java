@@ -23,9 +23,12 @@ import net.pocketodds.gambling.core.DeckSession;
 import net.pocketodds.gambling.core.GameType;
 import net.pocketodds.gambling.core.RewardBundle;
 import net.pocketodds.gambling.core.RewardTransactionService;
+import net.minecraft.util.RandomSource;
 import net.pocketodds.gambling.itembet.ItemBetConfigEntry;
 import net.pocketodds.gambling.itembet.ItemBetRegistry;
 import net.pocketodds.gambling.itembet.ItemBetValidator;
+import net.pocketodds.gambling.itembet.ItemRewardRegistry;
+import net.pocketodds.gambling.itembet.PayoutMode;
 import net.pocketodds.registration.ModItems;
 import net.pocketodds.util.ChipUtils;
 import net.pocketodds.util.FeedbackEffects;
@@ -117,18 +120,12 @@ public class DeckOfFateItem extends Item {
                     return InteractionResultHolder.fail(stack);
                 }
 
-                int totalCount = session.getPotUnits() * session.getInitialBet().getBetCount();
-                List<ItemStack> cashoutItems = createRewardList(session.getInitialBet(), totalCount);
-
-                // Set terminal status and persist BEFORE outbox delivery to prevent re-entrant cashouts
-                session.setStatus(DeckSession.Status.CASHOUT_COMMITTED);
-                session.setActive(false);
-                jackpotData.saveDeckSession(session);
-
-                // Deterministic transaction ID derived from sessionId
+                List<ItemStack> cashoutItems = calculateDeckCashoutRewards(session);
                 UUID cashoutTxId = UUID.nameUUIDFromBytes(("deck_cashout:" + sessionId).getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 RewardBundle bundle = new RewardBundle(cashoutItems, 0L, false);
-                RewardTransactionService.enqueueRewardBundle(jackpotData, cashoutTxId, serverPlayer.getUUID(), bundle);
+
+                // Atomically set CASHOUT_COMMITTED and enqueue outbox transaction under single lock
+                jackpotData.commitDeckCashout(sessionId, cashoutTxId, serverPlayer.getUUID(), bundle);
 
                 // Clear item session tag immediately
                 setSessionId(stack, null);
@@ -139,6 +136,7 @@ public class DeckOfFateItem extends Item {
                 // Close and remove completed session from memory
                 jackpotData.removeDeckSession(sessionId);
 
+                int totalCount = session.getPotUnits() * session.getInitialBet().getBetCount();
                 FeedbackEffects.sendActionBar(serverPlayer,
                         Component.translatable("pocketodds.deck.cashed_out", totalCount + " " + session.getInitialBet().getDisplayName().getString(), session.getStreak()).withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
                 FeedbackEffects.playSound(serverPlayer, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.2f);
@@ -351,6 +349,61 @@ public class DeckOfFateItem extends Item {
                 s.setCount(take);
                 list.add(s);
                 rem -= take;
+            }
+        }
+        return list;
+    }
+
+    public static List<ItemStack> calculateDeckCashoutRewards(DeckSession session) {
+        List<ItemStack> list = new ArrayList<>();
+        if (session == null || session.getInitialBet() == null || session.getPotUnits() <= 0) {
+            return list;
+        }
+
+        BetSnapshot bet = session.getInitialBet();
+        int totalUnits = session.getPotUnits();
+        int totalCount = totalUnits * bet.getBetCount();
+
+        if (bet.isChipBet()) {
+            list.addAll(createRewardList(bet, totalCount));
+            return list;
+        }
+
+        PayoutMode mode = PayoutMode.SAME_ITEM;
+        if (PocketOddsConfig.SERVER != null && PocketOddsConfig.isConfigLoaded()) {
+            mode = PayoutMode.fromId(PocketOddsConfig.SERVER.itemBetPayoutMode.get());
+        }
+        int globalCap = (PocketOddsConfig.SERVER != null && PocketOddsConfig.isConfigLoaded())
+                ? PocketOddsConfig.SERVER.maxItemRewardCap.get() : 512;
+
+        if (mode == PayoutMode.SAME_ITEM) {
+            list.addAll(createRewardList(bet, Math.min(totalCount, globalCap)));
+        } else if (mode == PayoutMode.REWARD_TABLE) {
+            long totalWinCredits = (long) totalUnits * bet.getTotalCreditValue();
+            list.addAll(ItemRewardRegistry.getTable(GameType.DECK).rollRewards(
+                    RandomSource.create(), totalWinCredits, bet.getTotalCreditValue(), globalCap
+            ));
+        } else if (mode == PayoutMode.BOTH) {
+            double sameItemWeight = (PocketOddsConfig.SERVER != null && PocketOddsConfig.isConfigLoaded())
+                    ? PocketOddsConfig.SERVER.bothSameItemWeight.get() : 0.80;
+            double tableWeight = (PocketOddsConfig.SERVER != null && PocketOddsConfig.isConfigLoaded())
+                    ? PocketOddsConfig.SERVER.bothTableWeight.get() : 0.20;
+
+            long totalWinCredits = (long) totalUnits * bet.getTotalCreditValue();
+            double rawTableBudget = totalWinCredits * tableWeight;
+            long tableBase = (long) Math.floor(rawTableBudget);
+            long tableBudgetCredits = tableBase + (RandomSource.create().nextDouble() < (rawTableBudget - tableBase) ? 1L : 0L);
+
+            double sameTarget = totalCount * sameItemWeight;
+            int sameItemBase = (int) Math.floor(sameTarget);
+            int sameItemCount = sameItemBase + (RandomSource.create().nextDouble() < (sameTarget - sameItemBase) ? 1 : 0);
+            if (sameItemCount > 0) {
+                list.addAll(createRewardList(bet, Math.min(sameItemCount, globalCap)));
+            }
+            if (tableBudgetCredits > 0L) {
+                list.addAll(ItemRewardRegistry.getTable(GameType.DECK).rollRewards(
+                        RandomSource.create(), tableBudgetCredits, bet.getTotalCreditValue(), globalCap
+                ));
             }
         }
         return list;

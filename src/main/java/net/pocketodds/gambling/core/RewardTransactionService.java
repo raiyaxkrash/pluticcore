@@ -54,8 +54,10 @@ public class RewardTransactionService {
      */
     public static boolean debitBet(BetPreparation prep, ServerPlayer player, JackpotSavedData jackpotData) {
         Objects.requireNonNull(prep, "prep must not be null");
-        Objects.requireNonNull(player, "player must not be null");
         Objects.requireNonNull(jackpotData, "jackpotData must not be null");
+        if (player == null) {
+            return debitBet(prep, jackpotData, true);
+        }
 
         BetSnapshot bet = prep.getBetSnapshot();
         if (InventoryUtils.countMatching(player, bet) < bet.getBetCount()) {
@@ -69,6 +71,17 @@ public class RewardTransactionService {
             return false;
         }
 
+        return debitBet(prep, jackpotData, false);
+    }
+
+    /**
+     * Phase 2 of 2PC: Core debit transition. Can bypass physical player inventory check for server testing.
+     */
+    public static boolean debitBet(BetPreparation prep, JackpotSavedData jackpotData, boolean bypassInventoryCheck) {
+        Objects.requireNonNull(prep, "prep must not be null");
+        Objects.requireNonNull(jackpotData, "jackpotData must not be null");
+
+        BetSnapshot bet = prep.getBetSnapshot();
         // Add contribution to server jackpot pool using basis points
         int basisPoints = (PocketOddsConfig.SERVER != null && PocketOddsConfig.isConfigLoaded())
                 ? (int) Math.round(PocketOddsConfig.SERVER.jackpotContributionRate.get() * 10_000.0)
@@ -168,6 +181,7 @@ public class RewardTransactionService {
         if (pending.isEmpty()) return true;
 
         boolean allDelivered = true;
+        int deliveredLinesCount = 0;
         for (JackpotSavedData.RewardTransaction tx : pending) {
             boolean txFailed = false;
             for (RewardLine line : tx.getLines()) {
@@ -175,6 +189,7 @@ public class RewardTransactionService {
                 try {
                     actualSink.deliver(player, line.getStack());
                     data.confirmDeliveredLine(tx.getTransactionId(), line.getLineId());
+                    deliveredLinesCount++;
                 } catch (Exception e) {
                     LOGGER.error("Failed to deliver reward line {} in transaction {} to player {}: {}",
                             line.getLineId(), tx.getTransactionId(), (player != null ? player.getScoreboardName() : playerUUID), e.getMessage(), e);
@@ -188,7 +203,7 @@ public class RewardTransactionService {
             }
         }
 
-        if (allDelivered && player != null) {
+        if (allDelivered && player != null && deliveredLinesCount > 0) {
             player.sendSystemMessage(Component.translatable("pocketodds.reconnect.rewards_delivered").withStyle(ChatFormatting.GREEN, ChatFormatting.BOLD));
             FeedbackEffects.playSound(player, SoundEvents.PLAYER_LEVELUP, 1.0f, 1.0f);
         }

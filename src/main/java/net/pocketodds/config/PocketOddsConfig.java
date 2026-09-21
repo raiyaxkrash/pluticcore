@@ -242,41 +242,41 @@ public class PocketOddsConfig {
 
             builder.push("item_reward_tables");
             slotRewardTable = builder
-                    .comment("Reward table for Slot machine. Format: itemId;weight;minCount;maxCount;maxCap;creditValue;minBetCredits;maxBetCredits")
+                    .comment("Reward table for Slot machine. Format: itemId;weight;maxCap;creditValue;minBetCredits;maxBetCredits (or legacy 8-field)")
                     .defineListAllowEmpty(List.of("slotRewardTable"), () -> List.of(
-                            "minecraft:iron_ingot;50;2;16;64;1;1;32",
-                            "minecraft:gold_ingot;30;1;8;32;8;8;128",
-                            "minecraft:diamond;15;1;4;16;64;64;1024",
-                            "minecraft:netherite_ingot;3;1;1;4;512;512;100000",
-                            "pocketodds:joker;2;1;1;1;100;16;100000",
-                            "pocketodds:insurance;5;1;1;2;50;8;100000"
+                            "minecraft:iron_ingot;50;64;1;1;32",
+                            "minecraft:gold_ingot;30;32;8;8;128",
+                            "minecraft:diamond;15;16;64;64;1024",
+                            "minecraft:netherite_ingot;3;4;512;512;100000",
+                            "pocketodds:joker;2;1;100;16;100000",
+                            "pocketodds:insurance;5;2;50;8;100000"
                     ), obj -> obj instanceof String);
 
             diceRewardTable = builder
-                    .comment("Reward table for Void Dice. Format: itemId;weight;minCount;maxCount;maxCap;creditValue;minBetCredits;maxBetCredits")
+                    .comment("Reward table for Void Dice. Format: itemId;weight;maxCap;creditValue;minBetCredits;maxBetCredits (or legacy 8-field)")
                     .defineListAllowEmpty(List.of("diceRewardTable"), () -> List.of(
-                            "minecraft:iron_ingot;50;2;16;64;1;1;32",
-                            "minecraft:gold_ingot;30;1;8;32;8;8;128",
-                            "minecraft:diamond;15;1;4;16;64;64;1024",
-                            "pocketodds:insurance;5;1;1;2;50;8;100000"
+                            "minecraft:iron_ingot;50;64;1;1;32",
+                            "minecraft:gold_ingot;30;32;8;8;128",
+                            "minecraft:diamond;15;16;64;64;1024",
+                            "pocketodds:insurance;5;2;50;8;100000"
                     ), obj -> obj instanceof String);
 
             rouletteRewardTable = builder
-                    .comment("Reward table for Roulette. Format: itemId;weight;minCount;maxCount;maxCap;creditValue;minBetCredits;maxBetCredits")
+                    .comment("Reward table for Roulette. Format: itemId;weight;maxCap;creditValue;minBetCredits;maxBetCredits (or legacy 8-field)")
                     .defineListAllowEmpty(List.of("rouletteRewardTable"), () -> List.of(
-                            "minecraft:gold_ingot;40;2;8;32;8;8;128",
-                            "minecraft:diamond;20;1;4;16;64;64;1024",
-                            "pocketodds:insurance;5;1;1;2;50;8;100000"
+                            "minecraft:gold_ingot;40;32;8;8;128",
+                            "minecraft:diamond;20;16;64;64;1024",
+                            "pocketodds:insurance;5;2;50;8;100000"
                     ), obj -> obj instanceof String);
 
             deckRewardTable = builder
-                    .comment("Reward table for Deck of Fate. Format: itemId;weight;minCount;maxCount;maxCap;creditValue;minBetCredits;maxBetCredits")
+                    .comment("Reward table for Deck of Fate. Format: itemId;weight;maxCap;creditValue;minBetCredits;maxBetCredits (or legacy 8-field)")
                     .defineListAllowEmpty(List.of("deckRewardTable"), () -> List.of(
-                            "minecraft:iron_ingot;50;2;16;64;1;1;32",
-                            "minecraft:gold_ingot;30;1;8;32;8;8;128",
-                            "minecraft:diamond;15;1;4;16;64;64;1024",
-                            "pocketodds:joker;3;1;1;1;100;16;100000",
-                            "pocketodds:insurance;5;1;1;2;50;8;100000"
+                            "minecraft:iron_ingot;50;64;1;1;32",
+                            "minecraft:gold_ingot;30;32;8;8;128",
+                            "minecraft:diamond;15;16;64;64;1024",
+                            "pocketodds:joker;3;1;100;16;100000",
+                            "pocketodds:insurance;5;2;50;8;100000"
                     ), obj -> obj instanceof String);
             builder.pop();
         }

@@ -74,21 +74,36 @@ public class ConfigParserTest {
     @Test
     public void testRewardTableParsingAndFiltering() {
         List<String> slotRaw = List.of(
-                "minecraft:iron_ingot;50;2;16;64;1;1;32",
-                "minecraft:diamond;15;1;4;16;64;64;1024",
+                "minecraft:iron_ingot;50;64;1;1;32", // New 6-field format
+                "minecraft:diamond;15;1;4;16;64;64;1024", // Legacy 8-field format
                 "malformed_reward_line"
         );
+        List<String> deckRaw = List.of(
+                "minecraft:gold_ingot;40;32;8;8;128"
+        );
 
-        ItemRewardRegistry.loadConfig(slotRaw, List.of(), List.of(), List.of());
+        ItemRewardRegistry.loadConfig(slotRaw, List.of(), List.of(), deckRaw);
         ItemRewardTable slotTable = ItemRewardRegistry.getTable(GameType.SLOT);
         Assertions.assertNotNull(slotTable);
         Assertions.assertEquals(2, slotTable.getEntries().size());
 
-        // Test credit range matching
+        // Test credit range matching for 6-field entry
+        Assertions.assertEquals(64, slotTable.getEntries().get(0).getMaxCap());
+        Assertions.assertEquals(1L, slotTable.getEntries().get(0).getCreditValue());
         Assertions.assertTrue(slotTable.getEntries().get(0).matchesBetCredits(10));
         Assertions.assertFalse(slotTable.getEntries().get(0).matchesBetCredits(100));
 
+        // Test credit range matching for legacy 8-field entry
+        Assertions.assertEquals(16, slotTable.getEntries().get(1).getMaxCap());
+        Assertions.assertEquals(64L, slotTable.getEntries().get(1).getCreditValue());
         Assertions.assertFalse(slotTable.getEntries().get(1).matchesBetCredits(10));
         Assertions.assertTrue(slotTable.getEntries().get(1).matchesBetCredits(100));
+
+        // Deck reward table
+        ItemRewardTable deckTable = ItemRewardRegistry.getTable(GameType.DECK);
+        Assertions.assertNotNull(deckTable);
+        Assertions.assertEquals(1, deckTable.getEntries().size());
+        Assertions.assertEquals(32, deckTable.getEntries().get(0).getMaxCap());
+        Assertions.assertEquals(8L, deckTable.getEntries().get(0).getCreditValue());
     }
 }
