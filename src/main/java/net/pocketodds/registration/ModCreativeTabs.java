@@ -24,17 +24,16 @@ public class ModCreativeTabs {
                         output.accept(ModItems.DIAMOND_CHIP.get());
                         output.accept(ModItems.NETHERITE_CHIP.get());
 
-                        // 5-8 Casino Games & Tokens
-                        output.accept(ModItems.POCKET_SLOT.get());
-                        output.accept(ModItems.VOID_DICE.get());
-                        output.accept(ModItems.ROULETTE_TOKEN.get());
-                        output.accept(ModItems.DECK_OF_FATE.get());
+                        // 5-6 Main Casino & Pouch Items
+                        output.accept(ModItems.POCKET_CASINO.get());
+                        output.accept(ModItems.COIN_POUCH.get());
 
-                        // 9-12 Special Cards & Rewards
+                        // 9-13 Special Cards, Rewards & Tokens
                         output.accept(ModItems.JOKER.get());
                         output.accept(ModItems.INSURANCE.get());
                         output.accept(ModItems.CURSED_CARD.get());
                         output.accept(ModItems.JACKPOT_TOKEN.get());
+                        output.accept(ModItems.PRIZE_TOKEN.get());
                     })
                     .build());
 

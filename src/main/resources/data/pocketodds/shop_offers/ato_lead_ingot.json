@@ -1,0 +1,14 @@
+﻿{
+  "offerId": "ato_lead_ingot",
+  "itemId": "alltheores:lead_ingot",
+  "count": 16,
+  "price": 8,
+  "category": "RESOURCES",
+  "purchaseLimit": 16,
+  "limitPeriod": "DAILY",
+  "requiredAdvancement": "",
+  "enabled": true,
+  "sortOrder": 160,
+  "nameKey": "shop.pocketodds.ato_lead_ingot",
+  "descriptionKey": "shop.pocketodds.ato_lead_ingot.desc"
+}

@@ -92,6 +92,7 @@ public class PocketOddsConfig {
         // Jackpot settings
         public final ForgeConfigSpec.LongValue jackpotBaseAmount;
         public final ForgeConfigSpec.DoubleValue jackpotContributionRate;
+        public final ForgeConfigSpec.LongValue jackpotMaxAmount;
 
         // Insurance refund rate
         public final ForgeConfigSpec.DoubleValue insuranceRefundRate;
@@ -163,6 +164,9 @@ public class PocketOddsConfig {
             jackpotContributionRate = builder
                     .comment("Fraction of each bet added to the server jackpot pool (0.05 = 5%). Set to 0 to disable.")
                     .defineInRange("jackpotContributionRate", 0.05, 0.0, 0.5);
+            jackpotMaxAmount = builder
+                    .comment("Maximum ceiling for the server jackpot pool in base chip units (credits). Prevents runaway accumulation and memory exhaustion upon jackpot win.")
+                    .defineInRange("jackpotMaxAmount", 10_000_000L, 1_000L, 1_000_000_000L);
             builder.pop();
 
             builder.push("insurance");

@@ -1,0 +1,14 @@
+﻿{
+  "offerId": "flux_dust",
+  "itemId": "fluxnetworks:flux_dust",
+  "count": 8,
+  "price": 6,
+  "category": "RESOURCES",
+  "purchaseLimit": 16,
+  "limitPeriod": "WEEKLY",
+  "requiredAdvancement": "",
+  "enabled": true,
+  "sortOrder": 70,
+  "nameKey": "shop.pocketodds.flux_dust",
+  "descriptionKey": "shop.pocketodds.flux_dust.desc"
+}

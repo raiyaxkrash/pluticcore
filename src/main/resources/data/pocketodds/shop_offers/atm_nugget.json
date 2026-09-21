@@ -1,0 +1,14 @@
+﻿{
+  "offerId": "atm_nugget",
+  "itemId": "allthemodium:allthemodium_nugget",
+  "count": 1,
+  "price": 50,
+  "category": "RARE",
+  "purchaseLimit": 1,
+  "limitPeriod": "WEEKLY",
+  "requiredAdvancement": "",
+  "enabled": true,
+  "sortOrder": 180,
+  "nameKey": "shop.pocketodds.atm_nugget",
+  "descriptionKey": "shop.pocketodds.atm_nugget.desc"
+}

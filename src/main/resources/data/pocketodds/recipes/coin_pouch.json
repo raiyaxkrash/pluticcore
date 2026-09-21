@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " S ",
+    "LGL",
+    " L "
+  ],
+  "key": {
+    "S": { "item": "minecraft:string" },
+    "L": { "item": "minecraft:leather" },
+    "G": { "item": "minecraft:gold_ingot" }
+  },
+  "result": {
+    "item": "pocketodds:coin_pouch",
+    "count": 1
+  }
+}

@@ -1,0 +1,14 @@
+﻿{
+  "offerId": "mek_alloy_reinforced",
+  "itemId": "mekanism:alloy_reinforced",
+  "count": 2,
+  "price": 16,
+  "category": "COMPONENTS",
+  "purchaseLimit": 4,
+  "limitPeriod": "WEEKLY",
+  "requiredAdvancement": "",
+  "enabled": true,
+  "sortOrder": 40,
+  "nameKey": "shop.pocketodds.mek_alloy_reinforced",
+  "descriptionKey": "shop.pocketodds.mek_alloy_reinforced.desc"
+}

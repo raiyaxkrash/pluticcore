@@ -41,6 +41,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+@Deprecated
 public class DeckOfFateItem extends Item {
 
     public DeckOfFateItem(Properties properties) {
@@ -94,257 +95,21 @@ public class DeckOfFateItem extends Item {
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
-
-        // Shift + Right Click = Cash Out!
-        if (player.isShiftKeyDown()) {
-            if (level.isClientSide) {
-                return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
-            }
-
-            if (player instanceof ServerPlayer serverPlayer) {
-                JackpotSavedData jackpotData = JackpotSavedData.get(serverPlayer.serverLevel());
-                UUID sessionId = getSessionId(stack);
-                DeckSession session = sessionId != null ? jackpotData.getDeckSession(sessionId) : null;
-
-                if (session == null || !session.isActive() || session.getStatus() != DeckSession.Status.ACTIVE) {
-                    setSessionId(stack, null);
-                    FeedbackEffects.sendActionBar(serverPlayer,
-                            Component.translatable("pocketodds.deck.empty_pot").withStyle(ChatFormatting.YELLOW));
-                    FeedbackEffects.playSound(serverPlayer, SoundEvents.VILLAGER_NO, 0.8f, 1.0f);
-                    return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
-                }
-
-                // Ownership verification: prevent cross-player cashout
-                if (!isSessionOwner(session, serverPlayer.getUUID())) {
-                    FeedbackEffects.sendActionBar(serverPlayer,
-                            Component.translatable("pocketodds.deck.not_owner").withStyle(ChatFormatting.RED));
-                    FeedbackEffects.playSound(serverPlayer, SoundEvents.VILLAGER_NO, 0.8f, 1.0f);
-                    return InteractionResultHolder.fail(stack);
-                }
-
-                List<ItemStack> cashoutItems = calculateDeckCashoutRewards(session);
-                UUID cashoutTxId = UUID.nameUUIDFromBytes(("deck_cashout:" + sessionId).getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                RewardBundle bundle = new RewardBundle(cashoutItems, 0L, false);
-
-                // Atomically set CASHOUT_COMMITTED and enqueue outbox transaction under single lock
-                jackpotData.commitDeckCashout(sessionId, cashoutTxId, serverPlayer.getUUID(), bundle);
-
-                // Clear item session tag immediately
-                setSessionId(stack, null);
-
-                // Deliver pending outbox transactions
-                RewardTransactionService.deliverPendingTransactions(serverPlayer.getUUID(), serverPlayer, jackpotData, InventoryUtils::giveOrDrop);
-
-                // Mark delivered and record completion receipt
-                jackpotData.markDeckSessionDelivered(sessionId);
-
-                Component cashoutMsg;
-                if (session.getInitialBet().isItemBet()) {
-                    String summary = formatItemRewards(cashoutItems);
-                    cashoutMsg = Component.translatable("pocketodds.deck.cashed_out_items", summary, session.getStreak());
-                } else {
-                    int totalCount = session.getPotUnits() * session.getInitialBet().getBetCount();
-                    cashoutMsg = Component.translatable("pocketodds.deck.cashed_out", totalCount, session.getStreak());
-                }
-                FeedbackEffects.sendActionBar(serverPlayer,
-                        cashoutMsg.copy().withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
-                FeedbackEffects.playSound(serverPlayer, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.2f);
-                FeedbackEffects.spawnParticles(serverPlayer, ParticleTypes.FIREWORK, 20, 0.4, 0.4, 0.4, 0.1);
-            }
-            return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
-        }
-
-        // Regular Right Click = Push luck (draw next card)
         if (level.isClientSide) {
-            return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
+            return InteractionResultHolder.sidedSuccess(stack, true);
         }
 
         if (player instanceof ServerPlayer serverPlayer) {
-            if (serverPlayer.getCooldowns().isOnCooldown(this)) {
-                return InteractionResultHolder.fail(stack);
-            }
-
-            JackpotSavedData jackpotData = JackpotSavedData.get(serverPlayer.serverLevel());
-            UUID sessionId = getSessionId(stack);
-            DeckSession session = sessionId != null ? jackpotData.getDeckSession(sessionId) : null;
-
-            // Starting a new round
-            if (session == null || !session.isActive()) {
-                ItemStack offhand = serverPlayer.getOffhandItem();
-                boolean isOffhandItemBet = !offhand.isEmpty() && !(offhand.getItem() instanceof ChipItem);
-
-                BetSnapshot betSnapshot;
-                if (isOffhandItemBet) {
-                    ItemBetConfigEntry entry = ItemBetRegistry.getEntry(offhand.getItem());
-                    int count = entry != null ? Math.min(offhand.getCount(), entry.getMaxCount()) : offhand.getCount();
-                    ItemBetValidator.ValidationResult val = ItemBetValidator.validate(offhand, count, entry, GameType.DECK);
-                    if (val != ItemBetValidator.ValidationResult.VALID) {
-                        Component errorMsg = switch (val) {
-                            case NOT_ALLOWED_ITEM -> Component.translatable("pocketodds.item_bet.not_allowed");
-                            case GAME_NOT_ALLOWED -> Component.translatable("pocketodds.item_bet.game_not_allowed");
-                            case CONTAINER_FORBIDDEN -> Component.translatable("pocketodds.item_bet.container_forbidden");
-                            case DAMAGED_FORBIDDEN -> Component.translatable("pocketodds.item_bet.damaged_forbidden");
-                            case NBT_OR_ENCHANTS_FORBIDDEN -> Component.translatable("pocketodds.item_bet.nbt_forbidden");
-                            case COUNT_OUT_OF_RANGE -> Component.translatable("pocketodds.item_bet.count_out_of_range", count, entry != null ? entry.getMinCount() : 1, entry != null ? entry.getMaxCount() : 64);
-                            default -> Component.translatable("pocketodds.item_bet.not_allowed");
-                        };
-                        FeedbackEffects.sendActionBar(serverPlayer, errorMsg.copy().withStyle(ChatFormatting.RED));
-                        FeedbackEffects.playSound(serverPlayer, SoundEvents.VILLAGER_NO, 0.8f, 1.0f);
-                        return InteractionResultHolder.fail(stack);
-                    }
-                    betSnapshot = BetSnapshot.fromItem(offhand, count, entry.getUnitCreditValue());
-                } else {
-                    ChipTier tier = (!offhand.isEmpty() && offhand.getItem() instanceof ChipItem chipItem)
-                            ? chipItem.getTier()
-                            : ChipTier.COPPER;
-                    betSnapshot = BetSnapshot.fromChip(tier, 1);
-                }
-
-                // 2PC Step 1: PREPARE
-                BetPreparation prep = RewardTransactionService.prepareBet(serverPlayer, GameType.DECK, betSnapshot, jackpotData);
-
-                // 2PC Step 2: DEBIT
-                boolean debited = RewardTransactionService.debitBet(prep, serverPlayer, jackpotData);
-                if (!debited) {
-                    if (betSnapshot.isItemBet()) {
-                        FeedbackEffects.sendActionBar(serverPlayer,
-                                Component.translatable("pocketodds.item_bet.not_enough", betSnapshot.getBetCount(), betSnapshot.getItemPrototype().getHoverName()).withStyle(ChatFormatting.RED));
-                    } else {
-                        FeedbackEffects.sendActionBar(serverPlayer,
-                                Component.translatable("pocketodds.not_enough_chips", betSnapshot.getBetCount(), betSnapshot.getChipTier().getColorCode() + betSnapshot.getChipTier().getId()).withStyle(ChatFormatting.RED));
-                    }
-                    FeedbackEffects.playSound(serverPlayer, SoundEvents.VILLAGER_NO, 0.8f, 1.0f);
-                    return InteractionResultHolder.fail(stack);
-                }
-
-                // Create and register server-side DeckSession
-                session = new DeckSession(serverPlayer.getUUID(), betSnapshot);
-                prep.setAssociatedId(session.getSessionId());
-                jackpotData.savePreparedBet(prep);
-                jackpotData.saveDeckSession(session);
-                setSessionId(stack, session.getSessionId());
-
-                // 2PC Step 3: COMMIT
-                RewardTransactionService.commitBet(prep, jackpotData);
-            } else {
-                // Ongoing streak: check ownership
-                if (!isSessionOwner(session, serverPlayer.getUUID())) {
-                    FeedbackEffects.sendActionBar(serverPlayer,
-                            Component.translatable("pocketodds.deck.not_owner").withStyle(ChatFormatting.RED));
-                    FeedbackEffects.playSound(serverPlayer, SoundEvents.VILLAGER_NO, 0.8f, 1.0f);
-                    return InteractionResultHolder.fail(stack);
-                }
-            }
-
-            serverPlayer.getCooldowns().addCooldown(this, 15);
-
-            int roll = level.random.nextInt(100);
-            int streak = session.getStreak();
-            int potUnits = session.getPotUnits();
-            BetSnapshot bet = session.getInitialBet();
-
-            if (roll < 35) {
-                // CURSE CARD (35% chance to bust)
-                if (InventoryUtils.hasInsurance(serverPlayer)) {
-                    InventoryUtils.consumeInsurance(serverPlayer);
-                    double rate = PocketOddsConfig.SERVER != null ? PocketOddsConfig.SERVER.insuranceRefundRate.get() : 0.50;
-                    int refundCount = Math.max(1, (int) Math.round(potUnits * bet.getBetCount() * rate));
-                    List<ItemStack> refundItems = createRewardList(bet, refundCount);
-
-                    RewardBundle bundle = new RewardBundle(refundItems, 0L, false);
-                    RewardTransactionService.enqueueRewardBundle(jackpotData, serverPlayer.getUUID(), bundle);
-                    RewardTransactionService.deliverPendingTransactions(serverPlayer.getUUID(), serverPlayer, jackpotData, InventoryUtils::giveOrDrop);
-
-                    Component insMsg;
-                    if (bet.isItemBet()) {
-                        insMsg = Component.translatable("pocketodds.item_bet.insurance_refund", refundCount, bet.getItemPrototype().getHoverName());
-                    } else {
-                        insMsg = Component.translatable("pocketodds.deck.curse_insured", refundCount);
-                    }
-                    FeedbackEffects.sendActionBar(serverPlayer,
-                            insMsg.copy().withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD));
-                    FeedbackEffects.playSound(serverPlayer, SoundEvents.SHIELD_BLOCK, 1.0f, 1.0f);
-                } else {
-                    InventoryUtils.giveOrDrop(serverPlayer, new ItemStack(ModItems.CURSED_CARD.get(), 1));
-                    serverPlayer.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 200, 0));
-                    serverPlayer.addEffect(new MobEffectInstance(MobEffects.HUNGER, 200, 0));
-
-                    FeedbackEffects.sendActionBar(serverPlayer,
-                            Component.translatable("pocketodds.deck.curse_lost").withStyle(ChatFormatting.DARK_RED, ChatFormatting.BOLD));
-                    FeedbackEffects.playSound(serverPlayer, SoundEvents.WITHER_HURT, 0.8f, 1.2f);
-                    FeedbackEffects.spawnParticles(serverPlayer, ParticleTypes.SMOKE, 25, 0.4, 0.4, 0.4, 0.05);
-                }
-
-                jackpotData.removeDeckSession(session.getSessionId());
-                setSessionId(stack, null);
-
-            } else if (roll < 70) {
-                // Neutral Patience Card (35% chance)
-                streak++;
-                session.setStreak(streak);
-                jackpotData.saveDeckSession(session);
-
-                FeedbackEffects.sendActionBar(serverPlayer,
-                        Component.translatable("pocketodds.deck.card_patience", (potUnits * bet.getBetCount()) + " " + bet.getDisplayName().getString(), streak).withStyle(ChatFormatting.GRAY, ChatFormatting.BOLD));
-                FeedbackEffects.playSound(serverPlayer, SoundEvents.BOOK_PAGE_TURN, 1.0f, 1.0f);
-                FeedbackEffects.spawnParticles(serverPlayer, ParticleTypes.ENCHANT, 10, 0.3, 0.3, 0.3, 0.05);
-
-            } else if (roll < 88) {
-                // Card of Fortune (18% chance)
-                double mult = PocketOddsConfig.SERVER != null ? PocketOddsConfig.SERVER.deckFortuneMultiplier.get() : 1.25;
-                potUnits = (potUnits <= 1) ? 2 : (int) Math.round(potUnits * mult);
-                streak++;
-                session.setPotUnits(potUnits);
-                session.setStreak(streak);
-                jackpotData.saveDeckSession(session);
-
-                FeedbackEffects.sendActionBar(serverPlayer,
-                        Component.translatable("pocketodds.deck.card_fortune", (potUnits * bet.getBetCount()) + " " + bet.getDisplayName().getString(), streak).withStyle(ChatFormatting.GREEN, ChatFormatting.BOLD));
-                FeedbackEffects.playSound(serverPlayer, SoundEvents.AMETHYST_BLOCK_CHIME, 1.0f, 1.2f);
-                FeedbackEffects.spawnParticles(serverPlayer, ParticleTypes.HAPPY_VILLAGER, 10, 0.3, 0.3, 0.3, 0.05);
-
-            } else if (roll < 94) {
-                // Card of Riches (6% chance)
-                double mult = PocketOddsConfig.SERVER != null ? PocketOddsConfig.SERVER.deckRichesMultiplier.get() : 1.5;
-                potUnits = (potUnits <= 1) ? 2 : (int) Math.round(potUnits * mult);
-                streak++;
-                session.setPotUnits(potUnits);
-                session.setStreak(streak);
-                jackpotData.saveDeckSession(session);
-
-                FeedbackEffects.sendActionBar(serverPlayer,
-                        Component.translatable("pocketodds.deck.card_riches", (potUnits * bet.getBetCount()) + " " + bet.getDisplayName().getString(), streak).withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
-                FeedbackEffects.playSound(serverPlayer, SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0f, 1.2f);
-                FeedbackEffects.spawnParticles(serverPlayer, ParticleTypes.FIREWORK, 15, 0.4, 0.4, 0.4, 0.1);
-
-            } else if (roll < 97) {
-                // Joker's Favor (3% chance)
-                potUnits += 1;
-                streak++;
-                session.setPotUnits(potUnits);
-                session.setStreak(streak);
-                jackpotData.saveDeckSession(session);
-                InventoryUtils.giveOrDrop(serverPlayer, new ItemStack(ModItems.JOKER.get(), 1));
-
-                FeedbackEffects.sendActionBar(serverPlayer,
-                        Component.translatable("pocketodds.deck.card_joker", (potUnits * bet.getBetCount()) + " " + bet.getDisplayName().getString(), streak).withStyle(ChatFormatting.LIGHT_PURPLE, ChatFormatting.BOLD));
-                FeedbackEffects.playSound(serverPlayer, SoundEvents.NOTE_BLOCK_CHIME.get(), 1.0f, 1.4f);
-                FeedbackEffects.spawnParticles(serverPlayer, ParticleTypes.WITCH, 15, 0.4, 0.4, 0.4, 0.1);
-
-            } else {
-                // Guardian Shield (3% chance)
-                potUnits += 1;
-                streak++;
-                session.setPotUnits(potUnits);
-                session.setStreak(streak);
-                jackpotData.saveDeckSession(session);
-                InventoryUtils.giveOrDrop(serverPlayer, new ItemStack(ModItems.INSURANCE.get(), 1));
-
-                FeedbackEffects.sendActionBar(serverPlayer,
-                        Component.translatable("pocketodds.deck.card_guardian", (potUnits * bet.getBetCount()) + " " + bet.getDisplayName().getString(), streak).withStyle(ChatFormatting.BLUE, ChatFormatting.BOLD));
-                FeedbackEffects.playSound(serverPlayer, SoundEvents.SHIELD_BLOCK, 1.0f, 1.0f);
-                FeedbackEffects.spawnParticles(serverPlayer, ParticleTypes.TOTEM_OF_UNDYING, 10, 0.3, 0.3, 0.3, 0.05);
-            }
+            net.minecraftforge.network.NetworkHooks.openScreen(
+                    serverPlayer,
+                    new net.minecraft.world.SimpleMenuProvider(
+                            (id, inv, p) -> new net.pocketodds.gui.casino.PocketCasinoMenu(id, inv, net.pocketodds.gui.casino.CasinoCategory.DECK_OF_FATE),
+                            Component.translatable("pocketodds.gui.casino.title")
+                    ),
+                    buf -> buf.writeInt(net.pocketodds.gui.casino.CasinoCategory.DECK_OF_FATE.ordinal())
+            );
+            net.pocketodds.service.CasinoGameService.onPlayerOpenCasino(serverPlayer);
+            return InteractionResultHolder.sidedSuccess(stack, false);
         }
 
         return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);

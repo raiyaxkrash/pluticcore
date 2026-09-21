@@ -59,6 +59,18 @@ public class ModItems {
     public static final RegistryObject<Item> JACKPOT_TOKEN = ITEMS.register("jackpot_token",
             () -> new JackpotTokenItem(new Item.Properties().stacksTo(16).fireResistant()));
 
+    // 13. Pocket Casino
+    public static final RegistryObject<Item> POCKET_CASINO = ITEMS.register("pocket_casino",
+            () -> new PocketCasinoItem(new Item.Properties().stacksTo(1).fireResistant()));
+
+    // 14. Coin Pouch
+    public static final RegistryObject<Item> COIN_POUCH = ITEMS.register("coin_pouch",
+            () -> new CoinPouchItem(new Item.Properties().stacksTo(1)));
+
+    // 15. Prize Token
+    public static final RegistryObject<Item> PRIZE_TOKEN = ITEMS.register("prize_token",
+            () -> new net.pocketodds.item.PrizeTokenItem(new Item.Properties()));
+
     public static void register(IEventBus eventBus) {
         ITEMS.register(eventBus);
     }

@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "GDG",
+    "GRG",
+    "CCC"
+  ],
+  "key": {
+    "G": { "item": "minecraft:gold_ingot" },
+    "D": { "item": "minecraft:diamond" },
+    "R": { "item": "minecraft:redstone_block" },
+    "C": { "item": "pocketodds:gold_chip" }
+  },
+  "result": {
+    "item": "pocketodds:pocket_casino",
+    "count": 1
+  }
+}

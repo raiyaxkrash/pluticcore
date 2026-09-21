@@ -12,6 +12,7 @@ import net.pocketodds.config.PocketOddsConfig;
 import net.pocketodds.gambling.tracker.ActiveRollTracker;
 import net.pocketodds.registration.ModCreativeTabs;
 import net.pocketodds.registration.ModItems;
+import net.pocketodds.registration.ModMenus;
 import org.slf4j.Logger;
 
 @Mod(PocketOdds.MODID)
@@ -22,8 +23,9 @@ public class PocketOdds {
     public PocketOdds() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
 
-        // Register items and creative tab
+        // Register items, menus and creative tab
         ModItems.register(modEventBus);
+        ModMenus.register(modEventBus);
         ModCreativeTabs.register(modEventBus);
 
         // Register common setup listener
@@ -33,13 +35,24 @@ public class PocketOdds {
         ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, PocketOddsConfig.SERVER_SPEC);
         modEventBus.addListener(PocketOddsConfig::onConfigLoad);
 
+        // Register Client Config
+        ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, net.pocketodds.client.PocketOddsClientConfig.CLIENT_SPEC);
+
         // Register event listeners on Forge bus
         MinecraftForge.EVENT_BUS.register(this);
+        MinecraftForge.EVENT_BUS.addListener(this::onAddReloadListeners);
 
         LOGGER.info("Pocket Odds initialized!");
     }
 
+    private void onAddReloadListeners(net.minecraftforge.event.AddReloadListenerEvent event) {
+        event.addListener(net.pocketodds.shop.ShopOfferRegistry.INSTANCE);
+    }
+
     private void commonSetup(final FMLCommonSetupEvent event) {
+        event.enqueueWork(() -> {
+            net.pocketodds.network.ModMessages.register();
+        });
         LOGGER.info("Pocket Odds common setup completed.");
     }
 }

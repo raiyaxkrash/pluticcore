@@ -1,0 +1,14 @@
+﻿{
+  "offerId": "fs_copper_upgrade",
+  "itemId": "functionalstorage:copper_upgrade",
+  "count": 2,
+  "price": 10,
+  "category": "STORAGE",
+  "purchaseLimit": 8,
+  "limitPeriod": "WEEKLY",
+  "requiredAdvancement": "",
+  "enabled": true,
+  "sortOrder": 110,
+  "nameKey": "shop.pocketodds.fs_copper_upgrade",
+  "descriptionKey": "shop.pocketodds.fs_copper_upgrade.desc"
+}

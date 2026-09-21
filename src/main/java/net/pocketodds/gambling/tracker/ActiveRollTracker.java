@@ -105,6 +105,7 @@ public class ActiveRollTracker {
     public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             JackpotSavedData data = JackpotSavedData.get(player.serverLevel());
+            data.auditAndResolvePendingDeposits(player);
             deliverPendingTransactions(player, data, InventoryUtils::giveOrDrop);
         }
     }

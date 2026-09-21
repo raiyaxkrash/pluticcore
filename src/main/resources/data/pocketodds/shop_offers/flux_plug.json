@@ -1,0 +1,14 @@
+﻿{
+  "offerId": "flux_plug",
+  "itemId": "fluxnetworks:flux_plug",
+  "count": 1,
+  "price": 20,
+  "category": "TRAVEL",
+  "purchaseLimit": 4,
+  "limitPeriod": "WEEKLY",
+  "requiredAdvancement": "",
+  "enabled": true,
+  "sortOrder": 80,
+  "nameKey": "shop.pocketodds.flux_plug",
+  "descriptionKey": "shop.pocketodds.flux_plug.desc"
+}

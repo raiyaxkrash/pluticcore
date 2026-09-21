@@ -8,7 +8,13 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.item.ItemStack;
 import net.pocketodds.config.PocketOddsConfig;
 import net.pocketodds.data.JackpotSavedData;
+import net.pocketodds.data.PouchBalance;
+import net.pocketodds.gui.casino.PayoutDestination;
+import net.pocketodds.item.ChipItem;
 import net.pocketodds.item.ChipTier;
+import net.pocketodds.network.ModMessages;
+import net.pocketodds.network.s2c.CoinPouchSyncS2CPacket;
+import net.pocketodds.service.CoinPouchService;
 import net.pocketodds.util.ChipUtils;
 import net.pocketodds.util.FeedbackEffects;
 import net.pocketodds.util.InventoryUtils;
@@ -74,9 +80,8 @@ public class RewardTransactionService {
 
     /**
      * Internal transition of 2PC debit state and jackpot contribution.
-     * Package-private to prevent external bypass of player inventory debiting.
      */
-    static boolean applyDebitTransition(BetPreparation prep, JackpotSavedData jackpotData) {
+    public static boolean applyDebitTransition(BetPreparation prep, JackpotSavedData jackpotData) {
         Objects.requireNonNull(prep, "prep must not be null");
         Objects.requireNonNull(jackpotData, "jackpotData must not be null");
 
@@ -143,10 +148,18 @@ public class RewardTransactionService {
      * Enqueues a RewardBundle into the persistent transactional outbox.
      */
     public static UUID enqueueRewardBundle(JackpotSavedData jackpotData, UUID playerUUID, RewardBundle bundle) {
-        return enqueueRewardBundle(jackpotData, UUID.randomUUID(), playerUUID, bundle);
+        return enqueueRewardBundle(jackpotData, UUID.randomUUID(), playerUUID, bundle, PayoutDestination.INVENTORY);
+    }
+
+    public static UUID enqueueRewardBundle(JackpotSavedData jackpotData, UUID playerUUID, RewardBundle bundle, PayoutDestination destination) {
+        return enqueueRewardBundle(jackpotData, UUID.randomUUID(), playerUUID, bundle, destination);
     }
 
     public static UUID enqueueRewardBundle(JackpotSavedData jackpotData, UUID txId, UUID playerUUID, RewardBundle bundle) {
+        return enqueueRewardBundle(jackpotData, txId, playerUUID, bundle, PayoutDestination.INVENTORY);
+    }
+
+    public static UUID enqueueRewardBundle(JackpotSavedData jackpotData, UUID txId, UUID playerUUID, RewardBundle bundle, PayoutDestination destination) {
         Objects.requireNonNull(jackpotData, "jackpotData must not be null");
         Objects.requireNonNull(playerUUID, "playerUUID must not be null");
         if (bundle == null || bundle.isEmpty()) {
@@ -154,51 +167,131 @@ public class RewardTransactionService {
         }
 
         UUID effectiveTxId = txId != null ? txId : UUID.randomUUID();
-        List<ItemStack> items = new ArrayList<>(bundle.getItems());
-
-        if (bundle.isJackpot() && bundle.getJackpotCredits() > 0L) {
-            items.addAll(ChipUtils.convertAmountToChips(bundle.getJackpotCredits()));
-        }
-
-        JackpotSavedData.RewardTransaction tx = new JackpotSavedData.RewardTransaction(
-                effectiveTxId, playerUUID, items, bundle.isJackpot(), bundle.getJackpotCredits(), false
-        );
+        JackpotSavedData.RewardTransaction tx = JackpotSavedData.RewardTransaction.fromBundle(effectiveTxId, playerUUID, bundle, destination);
         jackpotData.enqueueRewardTransaction(tx);
         return effectiveTxId;
     }
 
     /**
-     * Delivers pending reward transactions to the player line-by-line via the delivery sink.
-     * Each line is confirmed individually via confirmDeliveredLine.
+     * Delivers a single transaction by ID.
+     * Honors tx.getPayoutDestination():
+     * - If POUCH and a coin pouch is present, chip lines are credited directly into the pouch balance.
+     * - Any non-chip lines, or all lines if no pouch is present, are delivered via the delivery sink.
+     */
+    public static boolean deliverTransaction(UUID transactionId, ServerPlayer player, JackpotSavedData data, RewardDeliverySink sink) {
+        ItemStack pouch = (player != null) ? CoinPouchService.findFirstPouch(player) : ItemStack.EMPTY;
+        return deliverTransaction(transactionId, player, pouch, data, sink);
+    }
+
+    public static boolean deliverTransaction(UUID transactionId, ServerPlayer player, ItemStack pouch, JackpotSavedData data, RewardDeliverySink sink) {
+        if (data == null || transactionId == null) return false;
+        if (player == null && sink == null && (pouch == null || pouch.isEmpty())) return false;
+
+        JackpotSavedData.RewardTransaction tx = data.getTransaction(transactionId);
+        if (tx == null) return true;
+        if (tx.isEmpty()) {
+            data.removePendingTransaction(transactionId);
+            return true;
+        }
+
+        if (player != null && (pouch == null || pouch.isEmpty())) {
+            pouch = CoinPouchService.findFirstPouch(player);
+        }
+
+        PayoutDestination destination = tx.getPayoutDestination();
+        boolean pouchChanged = false;
+        UUID pouchUUID = null;
+
+        if (destination == PayoutDestination.POUCH && pouch != null && !pouch.isEmpty()) {
+            pouchUUID = CoinPouchService.getOrCreatePouchUUID(pouch);
+            for (RewardLine line : tx.getLines()) {
+                if (!line.isDelivered() && line.getStack().getItem() instanceof ChipItem) {
+                    boolean credited = data.creditRewardLineToPouch(pouchUUID, transactionId, line.getLineId(), pouch);
+                    if (credited) {
+                        pouchChanged = true;
+                    }
+                }
+            }
+            if (pouchChanged) {
+                PouchBalance updatedBalance = data.getPouchBalance(pouchUUID);
+                CoinPouchService.syncStackNbt(pouch, updatedBalance);
+                if (player != null) {
+                    ModMessages.sendToPlayer(new CoinPouchSyncS2CPacket(
+                            pouchUUID,
+                            updatedBalance.getCount(ChipTier.COPPER),
+                            updatedBalance.getCount(ChipTier.GOLD),
+                            updatedBalance.getCount(ChipTier.DIAMOND),
+                            updatedBalance.getCount(ChipTier.NETHERITE),
+                            updatedBalance.getTotalCredits()
+                    ), player);
+                }
+            }
+        }
+
+        // Re-read remaining state of transaction
+        tx = data.getTransaction(transactionId);
+        if (tx == null || tx.isEmpty()) {
+            data.removePendingTransaction(transactionId);
+            return true;
+        }
+
+        RewardDeliverySink actualSink = (sink != null) ? sink : InventoryUtils::giveOrDrop;
+        boolean allRemainingDelivered = true;
+
+        for (RewardLine line : tx.getLines()) {
+            if (line.isDelivered()) continue;
+            try {
+                actualSink.deliver(player, line.getStack());
+                data.confirmDeliveredLine(transactionId, line.getLineId());
+            } catch (Exception e) {
+                LOGGER.error("Pocket Odds: Failed to deliver reward line {} in transaction {} to player {}: {}",
+                        line.getLineId(), transactionId, (player != null ? player.getScoreboardName() : tx.getPlayerUUID()), e.getMessage(), e);
+                allRemainingDelivered = false;
+                break;
+            }
+        }
+
+        tx = data.getTransaction(transactionId);
+        if (allRemainingDelivered && (tx == null || tx.isEmpty())) {
+            data.removePendingTransaction(transactionId);
+        }
+
+        return allRemainingDelivered;
+    }
+
+    /**
+     * Delivers pending reward transactions to the player.
+     * Honors each transaction's PayoutDestination:
+     * - POUCH transactions deposit chips into the pouch (if available) and deliver non-chips to sink.
+     * - INVENTORY transactions deliver all lines to sink.
      */
     public static boolean deliverPendingTransactions(UUID playerUUID, ServerPlayer player, JackpotSavedData data, RewardDeliverySink sink) {
+        ItemStack pouch = (player != null) ? CoinPouchService.findFirstPouch(player) : ItemStack.EMPTY;
+        return deliverPendingTransactions(playerUUID, player, pouch, data, sink);
+    }
+
+    public static boolean deliverPendingTransactions(UUID playerUUID, ServerPlayer player, ItemStack pouch, JackpotSavedData data, RewardDeliverySink sink) {
         if (data == null) return false;
-        if (player == null && sink == null) return false;
+        if (player == null && sink == null && (pouch == null || pouch.isEmpty())) return false;
         RewardDeliverySink actualSink = (sink != null) ? sink : InventoryUtils::giveOrDrop;
 
         List<JackpotSavedData.RewardTransaction> pending = data.getPendingTransactions(playerUUID);
         if (pending.isEmpty()) return true;
 
+        if (player != null && (pouch == null || pouch.isEmpty())) {
+            pouch = CoinPouchService.findFirstPouch(player);
+        }
+
         boolean allDelivered = true;
         int deliveredLinesCount = 0;
+
         for (JackpotSavedData.RewardTransaction tx : pending) {
-            boolean txFailed = false;
-            for (RewardLine line : tx.getLines()) {
-                if (line.isDelivered()) continue;
-                try {
-                    actualSink.deliver(player, line.getStack());
-                    data.confirmDeliveredLine(tx.getTransactionId(), line.getLineId());
-                    deliveredLinesCount++;
-                } catch (Exception e) {
-                    LOGGER.error("Failed to deliver reward line {} in transaction {} to player {}: {}",
-                            line.getLineId(), tx.getTransactionId(), (player != null ? player.getScoreboardName() : playerUUID), e.getMessage(), e);
-                    txFailed = true;
-                    allDelivered = false;
-                    break;
-                }
-            }
-            if (!txFailed && tx.isEmpty()) {
-                data.removePendingTransaction(tx.getTransactionId());
+            int undeliveredBefore = (int) tx.getLines().stream().filter(l -> !l.isDelivered()).count();
+            boolean success = deliverTransaction(tx.getTransactionId(), player, pouch, data, actualSink);
+            if (success) {
+                deliveredLinesCount += undeliveredBefore;
+            } else {
+                allDelivered = false;
             }
         }
 

@@ -35,6 +35,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+@Deprecated
 public class RouletteTokenItem extends Item {
     private static final Set<Integer> RED_NUMBERS = Set.of(
             1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36
@@ -62,147 +63,21 @@ public class RouletteTokenItem extends Item {
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
-
-        if (player.isShiftKeyDown()) {
-            cycleBetType(stack);
-            if (!level.isClientSide && player instanceof ServerPlayer serverPlayer) {
-                String betType = getBetType(stack);
-                ChatFormatting color = switch (betType) {
-                    case "RED" -> ChatFormatting.RED;
-                    case "BLACK" -> ChatFormatting.GRAY;
-                    default -> ChatFormatting.GREEN;
-                };
-                FeedbackEffects.sendActionBar(serverPlayer,
-                        Component.translatable("pocketodds.roulette.bet_type", Component.literal(betType).withStyle(color)).withStyle(ChatFormatting.YELLOW));
-                FeedbackEffects.playSound(serverPlayer, SoundEvents.UI_BUTTON_CLICK.get(), 0.8f, 1.2f);
-            }
-            return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
-        }
-
         if (level.isClientSide) {
-            return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
+            return InteractionResultHolder.sidedSuccess(stack, true);
         }
 
         if (player instanceof ServerPlayer serverPlayer) {
-            if (serverPlayer.getCooldowns().isOnCooldown(this)) {
-                return InteractionResultHolder.fail(stack);
-            }
-
-            ItemStack offhand = serverPlayer.getOffhandItem();
-            boolean isOffhandItemBet = !offhand.isEmpty() && !(offhand.getItem() instanceof ChipItem);
-
-            BetSnapshot betSnapshot;
-            if (isOffhandItemBet) {
-                ItemBetConfigEntry entry = ItemBetRegistry.getEntry(offhand.getItem());
-                int count = entry != null ? Math.min(offhand.getCount(), entry.getMaxCount()) : offhand.getCount();
-                ItemBetValidator.ValidationResult val = ItemBetValidator.validate(offhand, count, entry, GameType.ROULETTE);
-                if (val != ItemBetValidator.ValidationResult.VALID) {
-                    Component errorMsg = switch (val) {
-                        case NOT_ALLOWED_ITEM -> Component.translatable("pocketodds.item_bet.not_allowed");
-                        case GAME_NOT_ALLOWED -> Component.translatable("pocketodds.item_bet.game_not_allowed");
-                        case CONTAINER_FORBIDDEN -> Component.translatable("pocketodds.item_bet.container_forbidden");
-                        case DAMAGED_FORBIDDEN -> Component.translatable("pocketodds.item_bet.damaged_forbidden");
-                        case NBT_OR_ENCHANTS_FORBIDDEN -> Component.translatable("pocketodds.item_bet.nbt_forbidden");
-                        case COUNT_OUT_OF_RANGE -> Component.translatable("pocketodds.item_bet.count_out_of_range", count, entry != null ? entry.getMinCount() : 1, entry != null ? entry.getMaxCount() : 64);
-                        default -> Component.translatable("pocketodds.item_bet.not_allowed");
-                    };
-                    FeedbackEffects.sendActionBar(serverPlayer, errorMsg.copy().withStyle(ChatFormatting.RED));
-                    FeedbackEffects.playSound(serverPlayer, SoundEvents.VILLAGER_NO, 0.8f, 1.0f);
-                    return InteractionResultHolder.fail(stack);
-                }
-                betSnapshot = BetSnapshot.fromItem(offhand, count, entry.getUnitCreditValue());
-            } else {
-                ChipTier tier = (!offhand.isEmpty() && offhand.getItem() instanceof ChipItem chipItem)
-                        ? chipItem.getTier()
-                        : ChipTier.GOLD;
-                int count = (!offhand.isEmpty()) ? Math.min(offhand.getCount(), 16) : 1;
-                betSnapshot = BetSnapshot.fromChip(tier, count);
-            }
-
-            JackpotSavedData jackpotData = JackpotSavedData.get(serverPlayer.serverLevel());
-
-            // 2PC Step 1: PREPARE
-            BetPreparation prep = RewardTransactionService.prepareBet(serverPlayer, GameType.ROULETTE, betSnapshot, jackpotData);
-            prep.setAssociatedId(prep.getPreparationId());
-            jackpotData.savePreparedBet(prep);
-
-            // 2PC Step 2: DEBIT
-            boolean debited = RewardTransactionService.debitBet(prep, serverPlayer, jackpotData);
-            if (!debited) {
-                if (betSnapshot.isItemBet()) {
-                    FeedbackEffects.sendActionBar(serverPlayer,
-                            Component.translatable("pocketodds.item_bet.not_enough", betSnapshot.getBetCount(), betSnapshot.getItemPrototype().getHoverName()).withStyle(ChatFormatting.RED));
-                } else {
-                    FeedbackEffects.sendActionBar(serverPlayer,
-                            Component.translatable("pocketodds.not_enough_chips", betSnapshot.getBetCount(), betSnapshot.getChipTier().getColorCode() + betSnapshot.getChipTier().getId()).withStyle(ChatFormatting.RED));
-                }
-                FeedbackEffects.playSound(serverPlayer, SoundEvents.VILLAGER_NO, 0.8f, 1.0f);
-                return InteractionResultHolder.fail(stack);
-            }
-
-            // Apply cooldown (token is permanent and NOT shrunk!)
-            serverPlayer.getCooldowns().addCooldown(this, 20);
-
-            // Roll 0..36
-            int number = level.random.nextInt(37);
-            boolean isZero = (number == 0);
-            boolean isRed = RED_NUMBERS.contains(number);
-            String outcomeType = isZero ? "GREEN" : (isRed ? "RED" : "BLACK");
-
-            String playerBet = getBetType(stack);
-            boolean won = playerBet.equalsIgnoreCase(outcomeType);
-
-            List<ItemStack> rewardItems = new ArrayList<>();
-            double mult = 0.0;
-
-            if (won) {
-                mult = isZero ? 35.0 : 2.0;
-                rewardItems.addAll(calculateRouletteRewards(betSnapshot, mult));
-            } else {
-                if (InventoryUtils.hasInsurance(serverPlayer)) {
-                    InventoryUtils.consumeInsurance(serverPlayer);
-                    double rate = PocketOddsConfig.SERVER != null ? PocketOddsConfig.SERVER.insuranceRefundRate.get() : 0.50;
-                    int refund = Math.max(1, (int) Math.round(betSnapshot.getBetCount() * rate));
-                    rewardItems.addAll(createRewardList(betSnapshot, refund));
-                }
-            }
-
-            // 2PC Step 3: COMMIT with settlement (records outcome transaction even on loss to prevent crash recovery refund)
-            RewardBundle bundle = new RewardBundle(rewardItems, 0L, false);
-            jackpotData.settleAndCommitBet(prep, prep.getPreparationId(), serverPlayer.getUUID(), bundle);
-
-            // Deliver outbox transactions
-            RewardTransactionService.deliverPendingTransactions(serverPlayer.getUUID(), serverPlayer, jackpotData, InventoryUtils::giveOrDrop);
-
-            // Visual feedback
-            if (won) {
-                int totalOut = (int) Math.round(betSnapshot.getBetCount() * mult);
-                Component winMsg = betSnapshot.isItemBet()
-                        ? Component.translatable("pocketodds.item_bet.win", totalOut, betSnapshot.getItemPrototype().getHoverName())
-                        : Component.translatable("pocketodds.roulette.win", "+" + totalOut + " " + betSnapshot.getChipTier().getId());
-
-                FeedbackEffects.sendActionBar(serverPlayer,
-                        Component.literal("[ 🎡 " + number + " " + outcomeType + " ] ")
-                                .append(winMsg.copy().withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD)));
-                FeedbackEffects.playSound(serverPlayer, SoundEvents.PLAYER_LEVELUP, 1.0f, 1.2f);
-                FeedbackEffects.spawnParticles(serverPlayer, ParticleTypes.FIREWORK, 20, 0.4, 0.4, 0.4, 0.1);
-            } else {
-                if (!rewardItems.isEmpty()) {
-                    int refund = Math.max(1, (int) Math.round(betSnapshot.getBetCount() * 0.50));
-                    Component insMsg = betSnapshot.isItemBet()
-                            ? Component.translatable("pocketodds.item_bet.insurance_refund", refund, betSnapshot.getItemPrototype().getHoverName())
-                            : Component.translatable("pocketodds.insurance.triggered", refund);
-                    FeedbackEffects.sendActionBar(serverPlayer,
-                            Component.literal("[ 🎡 " + number + " " + outcomeType + " ] ")
-                                    .append(insMsg.copy().withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD)));
-                    FeedbackEffects.playSound(serverPlayer, SoundEvents.SHIELD_BLOCK, 1.0f, 1.0f);
-                } else {
-                    FeedbackEffects.sendActionBar(serverPlayer,
-                            Component.literal("[ 🎡 " + number + " " + outcomeType + " ] ")
-                                    .append(Component.translatable("pocketodds.roulette.loss").withStyle(ChatFormatting.GRAY)));
-                    FeedbackEffects.playSound(serverPlayer, SoundEvents.VILLAGER_NO, 0.8f, 1.0f);
-                }
-            }
+            net.minecraftforge.network.NetworkHooks.openScreen(
+                    serverPlayer,
+                    new net.minecraft.world.SimpleMenuProvider(
+                            (id, inv, p) -> new net.pocketodds.gui.casino.PocketCasinoMenu(id, inv, net.pocketodds.gui.casino.CasinoCategory.ROULETTE),
+                            Component.translatable("pocketodds.gui.casino.title")
+                    ),
+                    buf -> buf.writeInt(net.pocketodds.gui.casino.CasinoCategory.ROULETTE.ordinal())
+            );
+            net.pocketodds.service.CasinoGameService.onPlayerOpenCasino(serverPlayer);
+            return InteractionResultHolder.sidedSuccess(stack, false);
         }
 
         return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);

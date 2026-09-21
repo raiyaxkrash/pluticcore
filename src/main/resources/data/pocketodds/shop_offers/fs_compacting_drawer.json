@@ -1,0 +1,14 @@
+﻿{
+  "offerId": "fs_compacting_drawer",
+  "itemId": "functionalstorage:compacting_drawer",
+  "count": 1,
+  "price": 15,
+  "category": "STORAGE",
+  "purchaseLimit": 4,
+  "limitPeriod": "WEEKLY",
+  "requiredAdvancement": "",
+  "enabled": true,
+  "sortOrder": 100,
+  "nameKey": "shop.pocketodds.fs_compacting_drawer",
+  "descriptionKey": "shop.pocketodds.fs_compacting_drawer.desc"
+}

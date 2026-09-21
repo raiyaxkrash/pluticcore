@@ -94,6 +94,10 @@ public class InventoryUtils {
      * Safely gives an item to the player. If inventory is full or partially full,
      * remaining items are cleanly dropped at the player's feet without duping.
      */
+    public static void giveItemSafely(Player player, ItemStack stack) {
+        giveOrDrop(player, stack);
+    }
+
     public static void giveOrDrop(Player player, ItemStack stack) {
         if (stack.isEmpty()) {
             return;

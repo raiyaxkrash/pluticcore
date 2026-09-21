@@ -36,6 +36,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
+@Deprecated
 public class VoidDiceItem extends Item {
     private static final int[] BET_AMOUNTS = {1, 8, 32, 64};
     private static final String[] DICE_FACES = {"⚀", "⚁", "⚂", "⚃", "⚄", "⚅"};
@@ -84,179 +85,21 @@ public class VoidDiceItem extends Item {
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
-        ItemStack offhand = player.getOffhandItem();
-        boolean isOffhandItemBet = !offhand.isEmpty() && !(offhand.getItem() instanceof ChipItem);
-
-        if (player.isShiftKeyDown()) {
-            if (isOffhandItemBet) {
-                if (!level.isClientSide && player instanceof ServerPlayer serverPlayer) {
-                    ItemBetConfigEntry entry = ItemBetRegistry.getEntry(offhand.getItem());
-                    int count = entry != null ? Math.min(offhand.getCount(), entry.getMaxCount()) : offhand.getCount();
-                    FeedbackEffects.sendActionBar(serverPlayer,
-                            Component.translatable("pocketodds.item_bet.bet_changed", count, offhand.getHoverName()).withStyle(ChatFormatting.YELLOW));
-                    FeedbackEffects.playSound(serverPlayer, SoundEvents.UI_BUTTON_CLICK.get(), 0.8f, 1.2f);
-                }
-            } else {
-                cycleBet(stack);
-                if (!level.isClientSide && player instanceof ServerPlayer serverPlayer) {
-                    int betCount = getBetCount(stack);
-                    ChipTier betTier = getBetTier(stack, player);
-                    FeedbackEffects.sendActionBar(serverPlayer,
-                            Component.translatable("pocketodds.dice.bet_changed", betCount, betTier.getColorCode() + betTier.getId()).withStyle(ChatFormatting.YELLOW));
-                    FeedbackEffects.playSound(serverPlayer, SoundEvents.UI_BUTTON_CLICK.get(), 0.8f, 1.2f);
-                }
-            }
-            return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
-        }
-
         if (level.isClientSide) {
-            return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
+            return InteractionResultHolder.sidedSuccess(stack, true);
         }
 
         if (player instanceof ServerPlayer serverPlayer) {
-            if (serverPlayer.getCooldowns().isOnCooldown(this)) {
-                return InteractionResultHolder.fail(stack);
-            }
-
-            BetSnapshot betSnapshot;
-            if (isOffhandItemBet) {
-                ItemBetConfigEntry entry = ItemBetRegistry.getEntry(offhand.getItem());
-                int count = entry != null ? Math.min(offhand.getCount(), entry.getMaxCount()) : offhand.getCount();
-                ItemBetValidator.ValidationResult val = ItemBetValidator.validate(offhand, count, entry, GameType.DICE);
-                if (val != ItemBetValidator.ValidationResult.VALID) {
-                    Component errorMsg = switch (val) {
-                        case NOT_ALLOWED_ITEM -> Component.translatable("pocketodds.item_bet.not_allowed");
-                        case GAME_NOT_ALLOWED -> Component.translatable("pocketodds.item_bet.game_not_allowed");
-                        case CONTAINER_FORBIDDEN -> Component.translatable("pocketodds.item_bet.container_forbidden");
-                        case DAMAGED_FORBIDDEN -> Component.translatable("pocketodds.item_bet.damaged_forbidden");
-                        case NBT_OR_ENCHANTS_FORBIDDEN -> Component.translatable("pocketodds.item_bet.nbt_forbidden");
-                        case COUNT_OUT_OF_RANGE -> Component.translatable("pocketodds.item_bet.count_out_of_range", count, entry != null ? entry.getMinCount() : 1, entry != null ? entry.getMaxCount() : 64);
-                        default -> Component.translatable("pocketodds.item_bet.not_allowed");
-                    };
-                    FeedbackEffects.sendActionBar(serverPlayer, errorMsg.copy().withStyle(ChatFormatting.RED));
-                    FeedbackEffects.playSound(serverPlayer, SoundEvents.VILLAGER_NO, 0.8f, 1.0f);
-                    return InteractionResultHolder.fail(stack);
-                }
-                betSnapshot = BetSnapshot.fromItem(offhand, count, entry.getUnitCreditValue());
-            } else {
-                ChipTier betTier = getBetTier(stack, serverPlayer);
-                int betCount = getBetCount(stack);
-                betSnapshot = BetSnapshot.fromChip(betTier, betCount);
-            }
-
-            JackpotSavedData jackpotData = JackpotSavedData.get(serverPlayer.serverLevel());
-
-            // 2PC Step 1: PREPARE
-            BetPreparation prep = RewardTransactionService.prepareBet(serverPlayer, GameType.DICE, betSnapshot, jackpotData);
-            prep.setAssociatedId(prep.getPreparationId());
-            jackpotData.savePreparedBet(prep);
-
-            // 2PC Step 2: DEBIT
-            boolean debited = RewardTransactionService.debitBet(prep, serverPlayer, jackpotData);
-            if (!debited) {
-                if (betSnapshot.isItemBet()) {
-                    FeedbackEffects.sendActionBar(serverPlayer,
-                            Component.translatable("pocketodds.item_bet.not_enough", betSnapshot.getBetCount(), betSnapshot.getItemPrototype().getHoverName()).withStyle(ChatFormatting.RED));
-                } else {
-                    FeedbackEffects.sendActionBar(serverPlayer,
-                            Component.translatable("pocketodds.not_enough_chips", betSnapshot.getBetCount(), betSnapshot.getChipTier().getColorCode() + betSnapshot.getChipTier().getId()).withStyle(ChatFormatting.RED));
-                }
-                FeedbackEffects.playSound(serverPlayer, SoundEvents.VILLAGER_NO, 0.8f, 1.0f);
-                return InteractionResultHolder.fail(stack);
-            }
-
-            int cd = PocketOddsConfig.SERVER != null ? PocketOddsConfig.SERVER.cooldownTicks.get() : 30;
-            serverPlayer.getCooldowns().addCooldown(this, cd);
-
-            // Roll two dice
-            int d1 = level.random.nextInt(6) + 1;
-            int d2 = level.random.nextInt(6) + 1;
-            int sum = d1 + d2;
-            boolean isDouble = (d1 == d2);
-
-            String d1Face = DICE_FACES[d1 - 1];
-            String d2Face = DICE_FACES[d2 - 1];
-
-            List<ItemStack> rewardItems = new ArrayList<>();
-            double mult = 0.0;
-            boolean isSnakeEyes = (d1 == 1 && d2 == 1);
-            boolean isWin = false;
-
-            if (isSnakeEyes) {
-                // Snake eyes disaster
-                serverPlayer.addEffect(new MobEffectInstance(MobEffects.DARKNESS, 120, 0));
-                serverPlayer.addEffect(new MobEffectInstance(MobEffects.WITHER, 80, 0));
-                if (InventoryUtils.hasInsurance(serverPlayer)) {
-                    InventoryUtils.consumeInsurance(serverPlayer);
-                    double rate = PocketOddsConfig.SERVER != null ? PocketOddsConfig.SERVER.insuranceRefundRate.get() : 0.50;
-                    int refund = Math.max(1, (int) Math.round(betSnapshot.getBetCount() * rate));
-                    rewardItems.addAll(createRewardList(betSnapshot, refund));
-                }
-            } else if (sum == 7) {
-                isWin = true;
-                mult = PocketOddsConfig.SERVER != null ? PocketOddsConfig.SERVER.diceLuckySevenPayout.get() : 3.0;
-                rewardItems.addAll(calculateDiceRewards(betSnapshot, mult));
-            } else if (isDouble) {
-                isWin = true;
-                mult = PocketOddsConfig.SERVER != null ? PocketOddsConfig.SERVER.diceDoublePayout.get() : 2.0;
-                rewardItems.addAll(calculateDiceRewards(betSnapshot, mult));
-            } else if (sum == 11) {
-                isWin = true;
-                mult = 2.0;
-                rewardItems.addAll(calculateDiceRewards(betSnapshot, mult));
-            } else {
-                // Regular loss
-                if (InventoryUtils.hasInsurance(serverPlayer)) {
-                    InventoryUtils.consumeInsurance(serverPlayer);
-                    double rate = PocketOddsConfig.SERVER != null ? PocketOddsConfig.SERVER.insuranceRefundRate.get() : 0.50;
-                    int refund = Math.max(1, (int) Math.round(betSnapshot.getBetCount() * rate));
-                    rewardItems.addAll(createRewardList(betSnapshot, refund));
-                }
-            }
-
-            // 2PC Step 3: COMMIT with settlement (records outcome transaction even on loss to prevent crash recovery refund)
-            RewardBundle bundle = new RewardBundle(rewardItems, 0L, false);
-            jackpotData.settleAndCommitBet(prep, prep.getPreparationId(), serverPlayer.getUUID(), bundle);
-
-            // Deliver outbox transactions
-            RewardTransactionService.deliverPendingTransactions(serverPlayer.getUUID(), serverPlayer, jackpotData, InventoryUtils::giveOrDrop);
-
-            // Feedback
-            if (isSnakeEyes) {
-                FeedbackEffects.sendActionBar(serverPlayer,
-                        Component.literal("[ 🎲 " + d1Face + " | " + d2Face + " ] ")
-                                .append(Component.translatable("pocketodds.dice.snake_eyes").withStyle(ChatFormatting.DARK_RED, ChatFormatting.BOLD)));
-                FeedbackEffects.playSound(serverPlayer, SoundEvents.AMBIENT_CAVE.get(), 1.0f, 0.8f);
-                FeedbackEffects.spawnParticles(serverPlayer, ParticleTypes.SQUID_INK, 20, 0.4, 0.4, 0.4, 0.05);
-            } else if (isWin) {
-                int totalOut = (int) Math.round(betSnapshot.getBetCount() * mult);
-                Component winMsg = betSnapshot.isItemBet()
-                        ? Component.translatable("pocketodds.item_bet.win", totalOut, betSnapshot.getItemPrototype().getHoverName())
-                        : Component.translatable("pocketodds.dice.win", "+" + totalOut);
-
-                FeedbackEffects.sendActionBar(serverPlayer,
-                        Component.literal("[ 🎲 " + d1Face + " | " + d2Face + (sum == 7 ? " = 7" : (isDouble ? "" : " = " + sum)) + " ] ")
-                                .append(winMsg.copy().withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD)));
-                FeedbackEffects.playSound(serverPlayer, SoundEvents.PLAYER_LEVELUP, 1.0f, 1.2f);
-                FeedbackEffects.spawnParticles(serverPlayer, ParticleTypes.FIREWORK, 25, 0.5, 0.5, 0.5, 0.1);
-            } else {
-                if (!rewardItems.isEmpty()) {
-                    // Insured
-                    int refund = Math.max(1, (int) Math.round(betSnapshot.getBetCount() * 0.50));
-                    Component insMsg = betSnapshot.isItemBet()
-                            ? Component.translatable("pocketodds.item_bet.insurance_refund", refund, betSnapshot.getItemPrototype().getHoverName())
-                            : Component.translatable("pocketodds.insurance.triggered", refund);
-                    FeedbackEffects.sendActionBar(serverPlayer,
-                            Component.literal("[ 🎲 " + d1Face + " | " + d2Face + " = " + sum + " ] ")
-                                    .append(insMsg.copy().withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD)));
-                    FeedbackEffects.playSound(serverPlayer, SoundEvents.SHIELD_BLOCK, 1.0f, 1.0f);
-                } else {
-                    FeedbackEffects.sendActionBar(serverPlayer,
-                            Component.literal("[ 🎲 " + d1Face + " | " + d2Face + " = " + sum + " ] ")
-                                    .append(Component.translatable("pocketodds.dice.loss").withStyle(ChatFormatting.GRAY)));
-                    FeedbackEffects.playSound(serverPlayer, SoundEvents.VILLAGER_NO, 0.8f, 1.0f);
-                }
-            }
+            net.minecraftforge.network.NetworkHooks.openScreen(
+                    serverPlayer,
+                    new net.minecraft.world.SimpleMenuProvider(
+                            (id, inv, p) -> new net.pocketodds.gui.casino.PocketCasinoMenu(id, inv, net.pocketodds.gui.casino.CasinoCategory.DICE),
+                            Component.translatable("pocketodds.gui.casino.title")
+                    ),
+                    buf -> buf.writeInt(net.pocketodds.gui.casino.CasinoCategory.DICE.ordinal())
+            );
+            net.pocketodds.service.CasinoGameService.onPlayerOpenCasino(serverPlayer);
+            return InteractionResultHolder.sidedSuccess(stack, false);
         }
 
         return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);

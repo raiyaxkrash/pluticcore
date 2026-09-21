@@ -5,8 +5,8 @@
 - **Версия мода**: `1.0.0`
 - **Целевая платформа**: Minecraft 1.20.1, Forge 47.2.0+
 - **Имя файла**: `pocketodds-1.0.0.jar`
-- **Размер файла**: `163 260` байт
-- **Контрольная сумма SHA-256**: `A2445D47ADC77282CAC21A6DDB702D48FADCD8087BF3891542829308C8F32603`
+- **Размер файла**: `234 956` байт
+- **Контрольная сумма SHA-256**: `6447FAAFAB68A9428D7DD7EA25A60348801DBB7BB93ACDBBD5B88553F7B50499`
 - **Дата сборки и проверки**: `2026-09-21`
 
 ---
@@ -15,17 +15,23 @@
 - **Экземпляр PrismLauncher**: `All the Mods 9 - To the Sky - atm9sky`
 - **Относительный путь к моду**: `minecraft/mods/pocketodds-1.0.0.jar`
 - **Проверка дубликатов**: В каталоге `minecraft/mods` проверено отсутствие других или устаревших версий `pocketodds-*.jar`.
-- **Сверка хеш-суммы**: Хеш скопированного в экземпляр JAR полностью совпадает со сборочным артефактом (`A2445D47ADC77282CAC21A6DDB702D48FADCD8087BF3891542829308C8F32603`).
+- **Сверка хеш-суммы**: Хеш скопированного в экземпляр JAR полностью совпадает со сборочным артефактом (`6447FAAFAB68A9428D7DD7EA25A60348801DBB7BB93ACDBBD5B88553F7B50499`).
 
 ---
 
 ## Результаты многоуровневой верификации
 
 ### 1. Автоматическое тестирование (`gradlew test`)
-- Наборы тестов: `net.pocketodds.MechanicsTest`, `net.pocketodds.ConfigParserTest`, `net.pocketodds.ItemBettingTest`, `net.pocketodds.RtpSimulationTest`
-- Пройдено тестов: **55 из 55** (`BUILD SUCCESSFUL`, 100% success rate).
+- Наборы тестов: `net.pocketodds.CasinoGuiTest`, `net.pocketodds.MechanicsTest`, `net.pocketodds.ConfigParserTest`, `net.pocketodds.ItemBettingTest`, `net.pocketodds.RtpSimulationTest`
+- Пройдено тестов: **62 из 62** (`BUILD SUCCESSFUL`, 100% success rate).
 - Проверено:
-  - 4-фазный 2PC жизненный цикл предметных ставок (`PREPARED` -> `DEBITED` -> `COMMITTED` -> `REFUND_QUEUED`).
+  - Единый предмет `Pocket Casino` (`pocket_casino`) с полноценным графическим интерфейсом и вкладками для всех 4 игр и джекпота.
+  - Предмет `Coin Pouch` (`coin_pouch`) с собственным инвентарным GUI для хранения, пополнения, вывода и атомарного списания фишек всех 4 номиналов.
+  - Дедупликация и защита от спама C2S сетевых пакетов (`operationId`).
+  - Полноценная клиентская анимация (вращение барабанов, колесо рулетки, бросок костей, вытягивание карт) только ПОСЛЕ фиксации исхода в серверном transactional outbox.
+  - Сохранение 4-фазного 2PC жизненного цикла предметных и фишечных ставок (`PREPARED` -> `DEBITED` -> `COMMITTED` -> `REFUND_QUEUED`).
+  - Редирект старых предметов (`PocketSlotItem`, `RouletteTokenItem`, `VoidDiceItem`, `DeckOfFateItem`) в единый GUI с аннотацией `@Deprecated`.
+  - Валидация предмета в выделенном слоте ставок (`SlotItemBet`): запрет контейнеров (Shulker, Bundle), повреждённых предметов и NBT/зачарований.
   - Строгая инкапсуляция списания ставок: `debitBet` в production требует `ServerPlayer != null` и физически списывает предметы; внутренний переход состояния `applyDebitTransition` сделан package-private, а для тестов вынесен вспомогательный `TestBetHelper` в тестовом пакете.
   - Персистентный журнал квитанций завершённых выплат (`completedReceipts`) и статус `DELIVERED` в `DeckSession`, исключающие повторное начисление уже доставленных наград при перезапуске сервера после сбоя.
   - Корректное формирование сообщений кэшаута Колоды из фактически выданных предметов `cashoutItems` (`pocketodds.deck.cashed_out_items`) для всех режимов (`SAME_ITEM`, `REWARD_TABLE`, `BOTH`), а также отдельное сообщение возврата страховки при проклятии.

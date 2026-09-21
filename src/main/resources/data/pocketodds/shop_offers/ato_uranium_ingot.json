@@ -1,0 +1,14 @@
+﻿{
+  "offerId": "ato_uranium_ingot",
+  "itemId": "alltheores:uranium_ingot",
+  "count": 8,
+  "price": 15,
+  "category": "RESOURCES",
+  "purchaseLimit": 8,
+  "limitPeriod": "WEEKLY",
+  "requiredAdvancement": "",
+  "enabled": true,
+  "sortOrder": 170,
+  "nameKey": "shop.pocketodds.ato_uranium_ingot",
+  "descriptionKey": "shop.pocketodds.ato_uranium_ingot.desc"
+}

@@ -1,0 +1,14 @@
+﻿{
+  "offerId": "mek_basic_circuit",
+  "itemId": "mekanism:basic_control_circuit",
+  "count": 2,
+  "price": 5,
+  "category": "COMPONENTS",
+  "purchaseLimit": 10,
+  "limitPeriod": "WEEKLY",
+  "requiredAdvancement": "",
+  "enabled": true,
+  "sortOrder": 10,
+  "nameKey": "shop.pocketodds.mek_basic_circuit",
+  "descriptionKey": "shop.pocketodds.mek_basic_circuit.desc"
+}

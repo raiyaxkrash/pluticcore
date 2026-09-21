@@ -1,0 +1,14 @@
+﻿{
+  "offerId": "atm_apple",
+  "itemId": "allthemodium:allthemodium_apple",
+  "count": 1,
+  "price": 40,
+  "category": "CONSUMABLES",
+  "purchaseLimit": 2,
+  "limitPeriod": "WEEKLY",
+  "requiredAdvancement": "",
+  "enabled": true,
+  "sortOrder": 190,
+  "nameKey": "shop.pocketodds.atm_apple",
+  "descriptionKey": "shop.pocketodds.atm_apple.desc"
+}

@@ -26,6 +26,21 @@ public class ItemBetValidator {
      * Strictly checks whether an ItemStack is a container capable of holding items.
      * Container items are unconditionally prohibited for bets!
      */
+    public static boolean isForbiddenContainer(ItemStack stack) {
+        return isContainerItem(stack);
+    }
+
+    public static boolean isDamaged(ItemStack stack) {
+        return stack != null && stack.isDamageableItem() && stack.isDamaged();
+    }
+
+    public static boolean hasForbiddenNbt(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        if (stack.isEnchanted() || stack.hasCustomHoverName()) return true;
+        CompoundTag tag = stack.getTag();
+        return tag != null && !tag.isEmpty();
+    }
+
     public static boolean isContainerItem(ItemStack stack) {
         if (stack == null || stack.isEmpty()) {
             return false;

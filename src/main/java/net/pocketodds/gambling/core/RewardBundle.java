@@ -6,6 +6,18 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * Canonical container for gambling round reward outcomes.
+ *
+ * Contract semantics:
+ * - {@link #getItems()}: Contains ALL materialized physical item stacks to be delivered to the player.
+ *   Reward factories (such as SlotRewardFactory) are responsible for materializing any jackpot payouts
+ *   into chip stacks inside this list.
+ * - {@link #getJackpotCredits()}: Contains the credit amount of the jackpot won. Used exclusively as informational
+ *   metadata (for transaction records, jackpot tokens, stats, and broadcasts). Transaction services and outboxes
+ *   MUST NOT rematerialize additional chips from this field.
+ * - {@link #isJackpot()}: Indicates whether the outcome was a jackpot win.
+ */
 public class RewardBundle {
     private final List<ItemStack> items;
     private final long jackpotCredits;
