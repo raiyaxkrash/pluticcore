@@ -55,7 +55,14 @@
 
   "tooltip.pocketodds.jackpot_token.title": "Grand Jackpot Trophy",
   "tooltip.pocketodds.jackpot_token.desc": "Commemorative token for hitting 3 Stars in the Pocket Slot!",
+  "tooltip.pocketodds.jackpot_token.winner": "Winner: %s",
+  "tooltip.pocketodds.jackpot_token.amount": "Jackpot: %s chips",
+  "tooltip.pocketodds.jackpot_token.date": "Date: %s",
   "tooltip.pocketodds.jackpot_token.use": "[Right Click] View current server jackpot pool",
+  "pocketodds.jackpot_token.header": "★ Commemorative Jackpot Trophy ★",
+  "pocketodds.jackpot_token.msg_winner": "Winner: %s",
+  "pocketodds.jackpot_token.msg_amount": "Won: %s chips",
+  "pocketodds.jackpot_token.msg_date": "Date: %s",
 
   "pocketodds.not_enough_chips": "You need %s %s chips to play!",
   "pocketodds.slot.bet_changed": "Bet changed to: %s %s chips",

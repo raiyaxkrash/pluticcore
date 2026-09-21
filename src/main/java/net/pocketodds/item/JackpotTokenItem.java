@@ -42,8 +42,10 @@ public class JackpotTokenItem extends Item {
 
             CompoundTag tag = stack.getTag();
             if (tag != null && tag.contains("Winner")) {
-                serverPlayer.sendSystemMessage(Component.literal("§6★ Памятный жетон срыва джекпота ★\n§eПобедитель: §f" + tag.getString("Winner")
-                        + "\n§eСорвано: §6" + tag.getLong("JackpotAmount") + " фишек\n§7Дата: " + tag.getString("Date")));
+                serverPlayer.sendSystemMessage(Component.translatable("pocketodds.jackpot_token.header").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
+                serverPlayer.sendSystemMessage(Component.translatable("pocketodds.jackpot_token.msg_winner", tag.getString("Winner")).withStyle(ChatFormatting.YELLOW));
+                serverPlayer.sendSystemMessage(Component.translatable("pocketodds.jackpot_token.msg_amount", tag.getLong("JackpotAmount")).withStyle(ChatFormatting.GOLD));
+                serverPlayer.sendSystemMessage(Component.translatable("pocketodds.jackpot_token.msg_date", tag.getString("Date")).withStyle(ChatFormatting.GRAY));
             }
 
             // Sound and celebratory particles
@@ -62,9 +64,9 @@ public class JackpotTokenItem extends Item {
 
         CompoundTag tag = stack.getTag();
         if (tag != null && tag.contains("Winner")) {
-            tooltip.add(Component.literal("§eПобедитель: §f" + tag.getString("Winner")));
-            tooltip.add(Component.literal("§eСумма: §6" + tag.getLong("JackpotAmount") + " фишек"));
-            tooltip.add(Component.literal("§7Дата: " + tag.getString("Date")));
+            tooltip.add(Component.translatable("tooltip.pocketodds.jackpot_token.winner", tag.getString("Winner")).withStyle(ChatFormatting.YELLOW));
+            tooltip.add(Component.translatable("tooltip.pocketodds.jackpot_token.amount", tag.getLong("JackpotAmount")).withStyle(ChatFormatting.GOLD));
+            tooltip.add(Component.translatable("tooltip.pocketodds.jackpot_token.date", tag.getString("Date")).withStyle(ChatFormatting.GRAY));
         } else {
             tooltip.add(Component.translatable("tooltip.pocketodds.jackpot_token.desc").withStyle(ChatFormatting.YELLOW));
         }

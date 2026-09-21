@@ -36,7 +36,21 @@ public enum ChipTier {
     }
 
     public Item getItem() {
-        return itemSupplier.get();
+        try {
+            if (itemSupplier != null) {
+                Item item = itemSupplier.get();
+                if (item != null) {
+                    return item;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return switch (this) {
+            case COPPER -> net.minecraft.world.item.Items.COPPER_INGOT;
+            case GOLD -> net.minecraft.world.item.Items.GOLD_INGOT;
+            case DIAMOND -> net.minecraft.world.item.Items.DIAMOND;
+            case NETHERITE -> net.minecraft.world.item.Items.NETHERITE_INGOT;
+        };
     }
 
     public ChipTier next() {

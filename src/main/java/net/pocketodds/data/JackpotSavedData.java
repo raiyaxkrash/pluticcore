@@ -52,7 +52,7 @@ public class JackpotSavedData extends SavedData {
             return Collections.unmodifiableList(copy);
         }
 
-        public boolean removeDeliveredItem(ItemStack stack) {
+        boolean removeDeliveredItem(ItemStack stack) {
             for (Iterator<ItemStack> it = items.iterator(); it.hasNext(); ) {
                 ItemStack item = it.next();
                 if (ItemStack.isSameItemSameTags(item, stack)) {
@@ -227,16 +227,31 @@ public class JackpotSavedData extends SavedData {
 
     public synchronized void enqueueRewardTransaction(RewardTransaction transaction) {
         if (transaction != null && !transaction.isEmpty()) {
+            for (RewardTransaction existing : pendingTransactions) {
+                if (existing.getTransactionId().equals(transaction.getTransactionId())) {
+                    return; // Idempotent: transaction with this rollId/transactionId is already recorded
+                }
+            }
             pendingTransactions.add(transaction);
             setDirty();
         }
+    }
+
+    public synchronized boolean hasPendingTransaction(UUID transactionId) {
+        if (transactionId == null) return false;
+        for (RewardTransaction tx : pendingTransactions) {
+            if (tx.getTransactionId().equals(transactionId)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public synchronized List<RewardTransaction> getPendingTransactions(UUID playerUUID) {
         List<RewardTransaction> result = new ArrayList<>();
         for (RewardTransaction tx : pendingTransactions) {
             if (tx.getPlayerUUID().equals(playerUUID) && !tx.isEmpty()) {
-                result.add(tx);
+                result.add(new RewardTransaction(tx.getTransactionId(), tx.getPlayerUUID(), tx.getItems()));
             }
         }
         return Collections.unmodifiableList(result);

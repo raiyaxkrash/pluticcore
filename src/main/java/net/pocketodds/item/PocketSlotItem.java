@@ -163,7 +163,7 @@ public class PocketSlotItem extends Item {
 
             // Register session with finalized symbols and outcome
             JackpotSavedData jackpotData = JackpotSavedData.get(serverPlayer.serverLevel());
-            ActiveRollTracker.addSession(new SlotRollSession(serverPlayer.getUUID(), betTier, betCount, symbols, outcome), jackpotData);
+            ActiveRollTracker.addSession(new SlotRollSession(serverPlayer.getUUID(), serverPlayer.getScoreboardName(), betTier, betCount, symbols, outcome), jackpotData);
 
             // Initial feedback
             FeedbackEffects.playSound(serverPlayer, SoundEvents.NOTE_BLOCK_HAT.get(), 1.0f, 1.0f);

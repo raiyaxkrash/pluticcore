@@ -105,18 +105,23 @@ public class ActiveRollTracker {
     public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             JackpotSavedData data = JackpotSavedData.get(player.serverLevel());
-            List<JackpotSavedData.RewardTransaction> pending = data.getPendingTransactions(player.getUUID());
-            if (!pending.isEmpty()) {
-                for (JackpotSavedData.RewardTransaction tx : pending) {
-                    for (ItemStack stack : tx.getItems()) {
-                        InventoryUtils.giveOrDrop(player, stack);
-                        data.confirmDeliveredItem(tx.getTransactionId(), stack);
-                    }
-                    data.removePendingTransaction(tx.getTransactionId());
+            deliverPendingTransactions(player, data, InventoryUtils::giveOrDrop);
+        }
+    }
+
+    public static void deliverPendingTransactions(ServerPlayer player, JackpotSavedData data, net.pocketodds.util.RewardDeliverySink sink) {
+        net.pocketodds.util.RewardDeliverySink actualSink = (sink != null) ? sink : InventoryUtils::giveOrDrop;
+        List<JackpotSavedData.RewardTransaction> pending = data.getPendingTransactions(player.getUUID());
+        if (!pending.isEmpty()) {
+            for (JackpotSavedData.RewardTransaction tx : pending) {
+                for (ItemStack stack : tx.getItems()) {
+                    actualSink.deliver(player, stack);
+                    data.confirmDeliveredItem(tx.getTransactionId(), stack);
                 }
-                player.sendSystemMessage(Component.translatable("pocketodds.reconnect.rewards_delivered").withStyle(ChatFormatting.GREEN, ChatFormatting.BOLD));
-                FeedbackEffects.playSound(player, SoundEvents.PLAYER_LEVELUP, 1.0f, 1.0f);
+                data.removePendingTransaction(tx.getTransactionId());
             }
+            player.sendSystemMessage(Component.translatable("pocketodds.reconnect.rewards_delivered").withStyle(ChatFormatting.GREEN, ChatFormatting.BOLD));
+            FeedbackEffects.playSound(player, SoundEvents.PLAYER_LEVELUP, 1.0f, 1.0f);
         }
     }
 }

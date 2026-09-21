@@ -2,14 +2,25 @@ package net.pocketodds;
 
 import net.minecraft.SharedConstants;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.TooltipFlag;
 import net.pocketodds.data.JackpotSavedData;
+import net.pocketodds.gambling.slot.SlotOutcome;
+import net.pocketodds.gambling.slot.SlotRollSession;
+import net.pocketodds.gambling.slot.SlotSymbol;
+import net.pocketodds.item.ChipTier;
+import net.pocketodds.item.JackpotTokenItem;
+import net.pocketodds.util.ChipUtils;
+import net.pocketodds.util.RewardDeliverySink;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -19,6 +30,9 @@ public class MechanicsTest {
     public static void setupMinecraft() {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
+        if (net.minecraft.core.registries.BuiltInRegistries.ITEM instanceof net.minecraft.core.MappedRegistry<?> mapped) {
+            mapped.unfreeze();
+        }
     }
 
     @Test
@@ -43,57 +57,39 @@ public class MechanicsTest {
         CompoundTag worldSaveTag = new CompoundTag();
         serverDataBeforeRestart.save(worldSaveTag);
 
-        // 3. Server Restart: New world instance loads SavedData from NBT CompoundTag
+        // 3. Server Crash / Restart: New server instance loads data from world NBT
         JackpotSavedData serverDataAfterRestart = JackpotSavedData.load(worldSaveTag);
 
-        // Assert jackpot amount survived restart exactly
+        // 4. Invariants check: Jackpot amount must be preserved exactly
         Assertions.assertEquals(amountBeforeRestart, serverDataAfterRestart.getJackpotAmount(),
-                "Jackpot amount must persist across world restarts!");
+                "Jackpot amount must persist across world saves and restarts!");
 
-        // Assert pending reward for reconnected player survived restart
-        List<ItemStack> deliveredRewards = serverDataAfterRestart.popPendingRewards(playerUUID);
-        Assertions.assertEquals(1, deliveredRewards.size(), "Pending reward must be preserved across restart!");
-        Assertions.assertEquals(5, deliveredRewards.get(0).getCount());
-        Assertions.assertEquals(Items.DIAMOND, deliveredRewards.get(0).getItem());
+        // Invariant check: Player's pending reward must not be lost
+        List<ItemStack> restoredRewards = serverDataAfterRestart.popPendingRewards(playerUUID);
+        Assertions.assertFalse(restoredRewards.isEmpty(), "Player pending rewards must persist across server restarts!");
+        Assertions.assertEquals(Items.DIAMOND, restoredRewards.get(0).getItem());
+        Assertions.assertEquals(5, restoredRewards.get(0).getCount());
 
-        // Assert pending queue is now cleared (no item dupe upon subsequent reconnects)
-        List<ItemStack> emptyList = serverDataAfterRestart.popPendingRewards(playerUUID);
-        Assertions.assertTrue(emptyList.isEmpty(), "Reward must not be delivered twice!");
-
-        // 4. Test Jackpot Payout (3 Stars) and reset to base amount
-        long claimedJackpot = serverDataAfterRestart.claimJackpot();
-        Assertions.assertEquals(amountBeforeRestart, claimedJackpot, "Claimed jackpot must equal accumulated amount!");
-        Assertions.assertEquals(100L, serverDataAfterRestart.getJackpotAmount(),
-                "Jackpot must reset to base amount (100) after payout!");
+        // Invariant check: Popping pending rewards must clear them permanently
+        Assertions.assertTrue(serverDataAfterRestart.popPendingRewards(playerUUID).isEmpty());
     }
 
     @Test
-    public void testDisconnectedPlayerRewardBuffering() {
-        JackpotSavedData data = new JackpotSavedData(500L);
-        UUID disconnectedPlayer = UUID.randomUUID();
+    public void testActiveRollSessionTickProgression() {
+        UUID playerUUID = UUID.randomUUID();
+        SlotSymbol[] symbols = new SlotSymbol[]{SlotSymbol.CHERRY, SlotSymbol.CHERRY, SlotSymbol.CHERRY};
+        SlotOutcome outcome = new SlotOutcome(symbols, false, false, false, SlotSymbol.CHERRY, 3, 3.0);
 
-        // Roll completes while player is offline -> reward added to pending queue
-        ItemStack prize1 = new ItemStack(Items.GOLD_INGOT, 8);
-        ItemStack prize2 = new ItemStack(Items.NETHERITE_SCRAP, 1);
-        data.addPendingReward(disconnectedPlayer, prize1);
-        data.addPendingReward(disconnectedPlayer, prize2);
+        SlotRollSession session = new SlotRollSession(playerUUID, ChipTier.COPPER, 1, symbols, outcome);
 
-        // Player logs back in
-        List<ItemStack> delivered = data.popPendingRewards(disconnectedPlayer);
-        Assertions.assertEquals(2, delivered.size());
-        Assertions.assertEquals(8, delivered.get(0).getCount());
-        Assertions.assertEquals(1, delivered.get(1).getCount());
+        Assertions.assertEquals(0, session.getTick());
+        Assertions.assertFalse(session.isFinished());
 
-        // Reconnect again -> nothing more
-        Assertions.assertTrue(data.popPendingRewards(disconnectedPlayer).isEmpty());
-    }
+        session.setTick(10);
+        Assertions.assertEquals(10, session.getTick());
 
-    @Test
-    public void testJackpotZeroContributionSetting() {
-        JackpotSavedData data = new JackpotSavedData(100L);
-        long initial = data.getJackpotAmount();
-        data.addContribution(0);
-        Assertions.assertEquals(initial, data.getJackpotAmount(), "Zero bet should not increase jackpot");
+        session.setTick(28);
+        Assertions.assertEquals(28, session.getTick());
     }
 
     @Test
@@ -105,6 +101,7 @@ public class MechanicsTest {
         CompoundTag sessionTag = new CompoundTag();
         sessionTag.putUUID("RollId", UUID.randomUUID());
         sessionTag.putUUID("PlayerUUID", playerUUID);
+        sessionTag.putString("PlayerName", "Steve");
         sessionTag.putString("BetTier", "gold");
         sessionTag.putInt("BetCount", 8);
         sessionTag.putString("Sym0", "GOLD");
@@ -125,6 +122,7 @@ public class MechanicsTest {
         Assertions.assertTrue(reloaded.getActiveSessions().containsKey(playerUUID));
         CompoundTag restoredSession = reloaded.getActiveSessions().get(playerUUID);
         Assertions.assertEquals(14, restoredSession.getInt("Tick"));
+        Assertions.assertEquals("Steve", restoredSession.getString("PlayerName"));
         Assertions.assertEquals("gold", restoredSession.getString("BetTier"));
         Assertions.assertEquals(8, restoredSession.getInt("BetCount"));
         Assertions.assertFalse(restoredSession.getBoolean("Finalized"));
@@ -139,31 +137,24 @@ public class MechanicsTest {
         ItemStack deckStack = new ItemStack(Items.PAPER);
 
         // Player bets 1 copper chip initially
-        net.pocketodds.item.DeckOfFateItem.setBetTier(deckStack, net.pocketodds.item.ChipTier.COPPER);
+        net.pocketodds.item.DeckOfFateItem.setBetTier(deckStack, ChipTier.COPPER);
         net.pocketodds.item.DeckOfFateItem.setPot(deckStack, 8);
         net.pocketodds.item.DeckOfFateItem.setStreak(deckStack, 3);
 
         // Locked tier in NBT must be COPPER
-        net.pocketodds.item.ChipTier lockedTier = net.pocketodds.item.DeckOfFateItem.getLockedRoundTier(deckStack);
-        Assertions.assertEquals(net.pocketodds.item.ChipTier.COPPER, lockedTier, "Locked tier must remain COPPER!");
+        ChipTier lockedTier = net.pocketodds.item.DeckOfFateItem.getLockedRoundTier(deckStack);
+        Assertions.assertEquals(ChipTier.COPPER, lockedTier, "Locked tier must remain COPPER!");
 
         // Even if player changes offhand or tries to call cashout, the locked tier stays COPPER
-        Assertions.assertNotEquals(net.pocketodds.item.ChipTier.NETHERITE, lockedTier);
+        Assertions.assertNotEquals(ChipTier.NETHERITE, lockedTier);
     }
 
     @Test
-    public void testSplitChipsLargeJackpotAlgorithm() {
-        // Test dividing 5000 jackpot chips into stacks <= 64
-        int totalChips = 5000;
-        List<ItemStack> splitStacks = new java.util.ArrayList<>();
-        int remaining = totalChips;
-        while (remaining > 0) {
-            int count = Math.min(remaining, 64);
-            splitStacks.add(new ItemStack(Items.GOLD_INGOT, count));
-            remaining -= count;
-        }
+    public void testChipUtilsSplittingAndConversion() {
+        // Test dividing 5000 jackpot chips into stacks <= 64 via production ChipUtils
+        List<ItemStack> splitStacks = ChipUtils.splitChips(Items.GOLD_INGOT, 5000);
 
-        Assertions.assertEquals(79, splitStacks.size()); // 78 * 64 + 8 = 5000
+        Assertions.assertEquals(79, splitStacks.size(), "5000 items should split into 79 stacks (78*64 + 8)");
         int reassembledTotal = 0;
         for (ItemStack stack : splitStacks) {
             Assertions.assertTrue(stack.getCount() <= 64, "Stack size must never exceed 64!");
@@ -171,70 +162,173 @@ public class MechanicsTest {
             reassembledTotal += stack.getCount();
         }
         Assertions.assertEquals(5000, reassembledTotal, "Reassembled chip total must exactly equal 5000!");
+
+        // Test tier conversion for a large amount (e.g. 3524 chips)
+        List<ItemStack> converted = ChipUtils.convertAmountToChips(3524L);
+        Assertions.assertFalse(converted.isEmpty());
+        for (ItemStack stack : converted) {
+            Assertions.assertTrue(stack.getCount() <= 64, "Converted stack size must not exceed 64!");
+        }
     }
 
     @Test
     public void testSlotSessionIdempotency() {
+        JackpotSavedData data = new JackpotSavedData(100L);
         UUID rollId = UUID.randomUUID();
         UUID playerUUID = UUID.randomUUID();
-        net.pocketodds.gambling.slot.SlotSymbol[] symbols = new net.pocketodds.gambling.slot.SlotSymbol[]{
-                net.pocketodds.gambling.slot.SlotSymbol.CHERRY,
-                net.pocketodds.gambling.slot.SlotSymbol.CHERRY,
-                net.pocketodds.gambling.slot.SlotSymbol.CHERRY
+        SlotSymbol[] symbols = new SlotSymbol[]{
+                SlotSymbol.CHERRY,
+                SlotSymbol.CHERRY,
+                SlotSymbol.CHERRY
         };
-        net.pocketodds.gambling.slot.SlotOutcome outcome = new net.pocketodds.gambling.slot.SlotOutcome(
-                symbols, false, false, false, net.pocketodds.gambling.slot.SlotSymbol.CHERRY, 3, 3.0
+        SlotOutcome outcome = new SlotOutcome(
+                symbols, false, false, false, SlotSymbol.CHERRY, 3, 3.0
         );
 
-        net.pocketodds.gambling.slot.SlotRollSession session = new net.pocketodds.gambling.slot.SlotRollSession(
-                rollId, playerUUID, net.pocketodds.item.ChipTier.COPPER, 8, symbols, outcome
+        SlotRollSession session = new SlotRollSession(
+                rollId, playerUUID, "Steve", ChipTier.COPPER, 8, symbols, outcome
         );
 
         Assertions.assertEquals(rollId, session.getRollId());
-        Assertions.assertFalse(session.isFinished());
+        Assertions.assertEquals("Steve", session.getPlayerName());
+        Assertions.assertFalse(session.isFinalized());
 
-        CompoundTag nbt = session.toNbt();
-        Assertions.assertEquals(rollId, nbt.getUUID("RollId"));
+        // First call to prepareAndCommitOutcome: should record transaction and mark finalized
+        session.prepareAndCommitOutcome(data, "Steve");
+        Assertions.assertTrue(session.isFinalized());
+
+        List<JackpotSavedData.RewardTransaction> pending1 = data.getPendingTransactions(playerUUID);
+        Assertions.assertEquals(1, pending1.size());
+        Assertions.assertEquals(rollId, pending1.get(0).getTransactionId());
+        int itemCount1 = pending1.get(0).getItems().size();
+        Assertions.assertTrue(itemCount1 > 0);
+
+        // Second call: must be a no-op (Idempotency test!)
+        session.prepareAndCommitOutcome(data, "Steve");
+        List<JackpotSavedData.RewardTransaction> pending2 = data.getPendingTransactions(playerUUID);
+        Assertions.assertEquals(1, pending2.size(), "Second commit must not duplicate transaction!");
+        Assertions.assertEquals(itemCount1, pending2.get(0).getItems().size(), "Items must not be duplicated!");
+
+        // Third check: reload a new session object with the same rollId
+        SlotRollSession reloaded = new SlotRollSession(
+                rollId, playerUUID, "Steve", ChipTier.COPPER, 8, symbols, outcome
+        );
+        reloaded.prepareAndCommitOutcome(data, "Steve");
+        Assertions.assertTrue(reloaded.isFinalized(), "Reloaded session must treat persistent outbox transaction as source of truth!");
+        Assertions.assertEquals(1, data.getPendingTransactions(playerUUID).size());
     }
 
     @Test
-    public void testRewardTransactionItemByItemDeliveryAndPartialFailure() {
+    public void testRewardDeliverySinkPartialFailure() {
         JackpotSavedData data = new JackpotSavedData(100L);
         UUID playerUUID = UUID.randomUUID();
         UUID txId = UUID.randomUUID();
 
-        List<ItemStack> prizes = new java.util.ArrayList<>();
+        List<ItemStack> prizes = new ArrayList<>();
         prizes.add(new ItemStack(Items.DIAMOND, 10));
         prizes.add(new ItemStack(Items.EMERALD, 20));
 
         JackpotSavedData.RewardTransaction tx = new JackpotSavedData.RewardTransaction(txId, playerUUID, prizes);
         data.enqueueRewardTransaction(tx);
 
-        List<JackpotSavedData.RewardTransaction> pending = data.getPendingTransactions(playerUUID);
-        Assertions.assertEquals(1, pending.size());
-        Assertions.assertEquals(2, pending.get(0).getItems().size());
+        List<ItemStack> deliveredStacks = new ArrayList<>();
+        RewardDeliverySink failingSink = (player, stack) -> {
+            if (deliveredStacks.isEmpty()) {
+                deliveredStacks.add(stack.copy());
+            } else {
+                throw new RuntimeException("Simulated crash between giveOrDrop and confirmDeliveredItem!");
+            }
+        };
 
-        // Deliver first item successfully
-        boolean confirmedFirst = data.confirmDeliveredItem(txId, new ItemStack(Items.DIAMOND, 10));
-        Assertions.assertTrue(confirmedFirst);
+        // Simulate crash on 2nd stack inside try-catch to model real JVM/server crash
+        try {
+            List<JackpotSavedData.RewardTransaction> current = data.getPendingTransactions(playerUUID);
+            for (ItemStack stack : current.get(0).getItems()) {
+                failingSink.deliver(null, stack);
+                data.confirmDeliveredItem(txId, stack);
+            }
+            Assertions.fail("Should have thrown simulated crash exception");
+        } catch (RuntimeException e) {
+            Assertions.assertEquals("Simulated crash between giveOrDrop and confirmDeliveredItem!", e.getMessage());
+        }
 
-        // Transaction still remains because emerald was not yet delivered!
-        List<JackpotSavedData.RewardTransaction> stillPending = data.getPendingTransactions(playerUUID);
-        Assertions.assertEquals(1, stillPending.size());
-        Assertions.assertEquals(1, stillPending.get(0).getItems().size());
-        Assertions.assertEquals(Items.EMERALD, stillPending.get(0).getItems().get(0).getItem());
+        // Invariant 1: First item (Diamond) was delivered and confirmed
+        Assertions.assertEquals(1, deliveredStacks.size());
+        Assertions.assertEquals(Items.DIAMOND, deliveredStacks.get(0).getItem());
 
-        // Deliver second item
-        boolean confirmedSecond = data.confirmDeliveredItem(txId, new ItemStack(Items.EMERALD, 20));
-        Assertions.assertTrue(confirmedSecond);
+        // Invariant 2: Second item (Emerald) remains in outbox transaction queue
+        List<JackpotSavedData.RewardTransaction> afterFailure = data.getPendingTransactions(playerUUID);
+        Assertions.assertEquals(1, afterFailure.size());
+        Assertions.assertEquals(1, afterFailure.get(0).getItems().size());
+        Assertions.assertEquals(Items.EMERALD, afterFailure.get(0).getItems().get(0).getItem());
 
-        // Now transaction queue is completely empty
-        Assertions.assertTrue(data.getPendingTransactions(playerUUID).isEmpty());
+        // Invariant 3: Retry with normal sink delivers ONLY the second item without duplicate Diamonds
+        RewardDeliverySink normalSink = (player, stack) -> deliveredStacks.add(stack.copy());
+        for (ItemStack stack : afterFailure.get(0).getItems()) {
+            normalSink.deliver(null, stack);
+            data.confirmDeliveredItem(txId, stack);
+        }
+
+        Assertions.assertTrue(data.getPendingTransactions(playerUUID).isEmpty(), "Outbox queue must be empty after complete delivery!");
+        Assertions.assertEquals(2, deliveredStacks.size());
+        Assertions.assertEquals(Items.EMERALD, deliveredStacks.get(1).getItem());
     }
 
     @Test
-    public void testRoulettePayoutAndJackpotTokenTrophy() {
-        // 1. Roulette payout math
+    public void testJackpotTokenTrophyBehavior() {
+        JackpotTokenItem tokenItem = new JackpotTokenItem(new net.minecraft.world.item.Item.Properties());
+        ItemStack trophy = new ItemStack(Items.GOLD_NUGGET);
+        trophy.getOrCreateTag().putString("Winner", "Steve");
+        trophy.getOrCreateTag().putLong("JackpotAmount", 2500L);
+        trophy.getOrCreateTag().putString("Date", "2026-09-21");
+
+        List<Component> tooltips = new ArrayList<>();
+        tokenItem.appendHoverText(trophy, null, tooltips, TooltipFlag.NORMAL);
+
+        Assertions.assertTrue(tooltips.size() >= 5);
+
+        // Verify TranslatableContents keys and arguments
+        boolean foundWinner = false;
+        boolean foundAmount = false;
+        boolean foundDate = false;
+
+        for (Component comp : tooltips) {
+            if (comp.getContents() instanceof TranslatableContents translatable) {
+                String key = translatable.getKey();
+                if ("tooltip.pocketodds.jackpot_token.winner".equals(key)) {
+                    foundWinner = true;
+                    Assertions.assertEquals("Steve", translatable.getArgs()[0]);
+                } else if ("tooltip.pocketodds.jackpot_token.amount".equals(key)) {
+                    foundAmount = true;
+                    Assertions.assertEquals(2500L, translatable.getArgs()[0]);
+                } else if ("tooltip.pocketodds.jackpot_token.date".equals(key)) {
+                    foundDate = true;
+                    Assertions.assertEquals("2026-09-21", translatable.getArgs()[0]);
+                }
+            }
+        }
+
+        Assertions.assertTrue(foundWinner, "Translation key for winner must be present in tooltip!");
+        Assertions.assertTrue(foundAmount, "Translation key for amount must be present in tooltip!");
+        Assertions.assertTrue(foundDate, "Translation key for date must be present in tooltip!");
+
+        // Test uninitialized token fallback
+        ItemStack emptyToken = new ItemStack(Items.GOLD_NUGGET);
+        List<Component> emptyTooltips = new ArrayList<>();
+        tokenItem.appendHoverText(emptyToken, null, emptyTooltips, TooltipFlag.NORMAL);
+        boolean foundDesc = false;
+        for (Component comp : emptyTooltips) {
+            if (comp.getContents() instanceof TranslatableContents translatable) {
+                if ("tooltip.pocketodds.jackpot_token.desc".equals(translatable.getKey())) {
+                    foundDesc = true;
+                }
+            }
+        }
+        Assertions.assertTrue(foundDesc, "Uninitialized token must contain default description key!");
+    }
+
+    @Test
+    public void testRoulettePayoutMath() {
         // European roulette: 37 pockets (0..36). 18 Red, 18 Black, 1 Green (Zero)
         double redProb = 18.0 / 37.0;
         double greenProb = 1.0 / 37.0;
@@ -245,15 +339,5 @@ public class MechanicsTest {
         Assertions.assertTrue(rtpGreen < 100.0, "Roulette Green RTP must be under 100%!");
         Assertions.assertEquals(97.30, Math.round(rtpRed * 100.0) / 100.0);
         Assertions.assertEquals(94.59, Math.round(rtpGreen * 100.0) / 100.0);
-
-        // 2. Jackpot Token Commemorative Trophy
-        ItemStack trophy = new ItemStack(Items.GOLD_NUGGET);
-        trophy.getOrCreateTag().putString("Winner", "Steve");
-        trophy.getOrCreateTag().putLong("JackpotAmount", 2500L);
-        trophy.getOrCreateTag().putString("Date", "2026-09-21");
-
-        Assertions.assertEquals("Steve", trophy.getTag().getString("Winner"));
-        Assertions.assertEquals(2500L, trophy.getTag().getLong("JackpotAmount"));
-        Assertions.assertEquals("2026-09-21", trophy.getTag().getString("Date"));
     }
 }

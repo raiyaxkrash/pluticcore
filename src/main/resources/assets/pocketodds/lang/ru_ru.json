@@ -55,7 +55,14 @@
 
   "tooltip.pocketodds.jackpot_token.title": "Трофей срыва джекпота",
   "tooltip.pocketodds.jackpot_token.desc": "Памятный жетон за выпадение 3 Звезд в Карманном слоте!",
+  "tooltip.pocketodds.jackpot_token.winner": "Победитель: %s",
+  "tooltip.pocketodds.jackpot_token.amount": "Сумма: %s фишек",
+  "tooltip.pocketodds.jackpot_token.date": "Дата: %s",
   "tooltip.pocketodds.jackpot_token.use": "[ПКМ] Проверить текущий джекпот сервера",
+  "pocketodds.jackpot_token.header": "★ Памятный жетон срыва джекпота ★",
+  "pocketodds.jackpot_token.msg_winner": "Победитель: %s",
+  "pocketodds.jackpot_token.msg_amount": "Сорвано: %s фишек",
+  "pocketodds.jackpot_token.msg_date": "Дата: %s",
 
   "pocketodds.not_enough_chips": "Вам нужно %s %s фишек для игры!",
   "pocketodds.slot.bet_changed": "Ставка изменена на: %s %s фишек",

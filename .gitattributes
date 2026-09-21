@@ -1,5 +1,24 @@
+# Auto-detect text files and normalize line endings to LF
+* text=auto eol=lf
+
+# Windows batch files must preserve CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Source code and configs
+*.java text diff=java eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.gradle text eol=lf
+*.properties text eol=lf
+*.txt text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# Binary files
+*.png binary
+*.jar binary
+
 # Disable autocrlf on generated files, they always generate with LF
-# Add any extra files or paths here to make git stop saying they
-# are changed when only line endings change.
 src/generated/**/.cache/cache text eol=lf
 src/generated/**/*.json text eol=lf

@@ -209,61 +209,99 @@ public class RtpSimulationTest {
 
     /**
      * Симуляция многошаговых стратегий в Колоде Судьбы на 1,000,000 раундов:
-     * - Стратегия А: Кэшаут сразу при первом удвоении банка (pot >= 2)
+     * - Стратегия А: Кэшаут сразу при первом росте банка (pot >= 2)
      * - Стратегия Б: Кэшаут на серии 2 (streak >= 2)
      * - Стратегия В: Жадная стратегия до серии 3 (streak >= 3)
      */
     @Test
     public void simulateDeckOfFateMultiStepStrategies() {
         final int RUNS = 1_000_000;
-        final Random random = new Random(54321);
 
-        // Стратегия А: Кэшаут при pot >= 2
-        long totalBetA = 0;
-        long totalCashedA = 0;
-        long jokersA = 0;
-        long insuranceA = 0;
+        // --- Стратегия А: Кэшаут при pot >= 2 ---
+        StrategyResult resA = runDeckSimulation(0, 2, RUNS, 54321);
+        System.out.println("=== DECK OF FATE STRATEGY A: CASHOUT AT POT >= 2 ===");
+        System.out.printf("Direct Chip RTP: %.2f%%\n", resA.rtp);
+        System.out.printf("Busts: %d (%.2f%%)\n", resA.busts, (resA.busts / (double) RUNS) * 100.0);
+        System.out.printf("Joker items: %d, Insurance items: %d\n", resA.jokers, resA.insurance);
+        Assertions.assertTrue(resA.rtp < 100.0, "Strategy A RTP must stay under 100%! Got: " + resA.rtp);
 
-        for (int i = 0; i < RUNS; i++) {
-            totalBetA += 1;
+        // --- Стратегия Б: Кэшаут на серии 2 (streak >= 2) ---
+        StrategyResult resB = runDeckSimulation(2, 0, RUNS, 54322);
+        System.out.println("=== DECK OF FATE STRATEGY B: CASHOUT AT STREAK >= 2 ===");
+        System.out.printf("Direct Chip RTP: %.2f%%\n", resB.rtp);
+        System.out.printf("Busts: %d (%.2f%%)\n", resB.busts, (resB.busts / (double) RUNS) * 100.0);
+        System.out.printf("Joker items: %d, Insurance items: %d\n", resB.jokers, resB.insurance);
+        Assertions.assertTrue(resB.rtp < 100.0, "Strategy B RTP must stay under 100%! Got: " + resB.rtp);
+
+        // --- Стратегия В: Кэшаут на серии 3 (streak >= 3) ---
+        StrategyResult resC = runDeckSimulation(3, 0, RUNS, 54323);
+        System.out.println("=== DECK OF FATE STRATEGY C: CASHOUT AT STREAK >= 3 ===");
+        System.out.printf("Direct Chip RTP: %.2f%%\n", resC.rtp);
+        System.out.printf("Busts: %d (%.2f%%)\n", resC.busts, (resC.busts / (double) RUNS) * 100.0);
+        System.out.printf("Joker items: %d, Insurance items: %d\n", resC.jokers, resC.insurance);
+        Assertions.assertTrue(resC.rtp < 100.0, "Strategy C RTP must stay under 100%! Got: " + resC.rtp);
+        System.out.println("=======================================================");
+    }
+
+    private static class StrategyResult {
+        long totalBet;
+        long totalCashed;
+        long busts;
+        long jokers;
+        long insurance;
+        double rtp;
+    }
+
+    private StrategyResult runDeckSimulation(int targetStreak, int targetPot, int runs, long seed) {
+        Random random = new Random(seed);
+        StrategyResult res = new StrategyResult();
+        res.totalBet = runs;
+
+        for (int i = 0; i < runs; i++) {
             int pot = 1;
+            int streak = 1;
             boolean inRound = true;
 
             while (inRound) {
                 int roll = random.nextInt(100);
                 if (roll < 35) {
-                    // Curse
+                    // Curse (busted)
                     pot = 0;
-                    inRound = false;
-                } else if (roll < 70) {
-                    // Patience (pot stays 1, push luck again)
-                } else if (roll < 88) {
-                    // Fortune: pot = 2 -> Cash out!
-                    pot = 2;
-                    inRound = false;
-                } else if (roll < 94) {
-                    // Riches: pot = 2 -> Cash out!
-                    pot = 2;
-                    inRound = false;
-                } else if (roll < 97) {
-                    // Joker: pot = 2 + item -> Cash out!
-                    pot = 2;
-                    jokersA++;
+                    streak = 0;
+                    res.busts++;
                     inRound = false;
                 } else {
-                    // Insurance: pot = 2 + item -> Cash out!
-                    pot = 2;
-                    insuranceA++;
-                    inRound = false;
+                    if (roll < 70) {
+                        // Patience (pot stays same)
+                    } else if (roll < 88) {
+                        // Fortune (1.25x)
+                        pot = (pot <= 1) ? 2 : (int) Math.round(pot * 1.25);
+                    } else if (roll < 94) {
+                        // Riches (1.5x)
+                        pot = (pot <= 1) ? 2 : (int) Math.round(pot * 1.5);
+                    } else if (roll < 97) {
+                        // Joker (+1 pot, item awarded)
+                        pot += 1;
+                        res.jokers++;
+                    } else {
+                        // Guardian (+1 pot, item awarded)
+                        pot += 1;
+                        res.insurance++;
+                    }
+                    streak++;
+
+                    // Check cashout condition
+                    if (targetPot > 0 && pot >= targetPot) {
+                        inRound = false;
+                    } else if (targetStreak > 0 && streak >= targetStreak) {
+                        inRound = false;
+                    }
                 }
             }
-            totalCashedA += pot;
+            res.totalCashed += pot;
         }
 
-        double rtpA = (totalCashedA / (double) totalBetA) * 100.0;
-        System.out.println("=== DECK OF FATE MULTI-STEP: CASHOUT AT POT >= 2 ===");
-        System.out.printf("Direct Chip RTP: %.2f%%\n", rtpA);
-        System.out.printf("Joker items: %d, Insurance items: %d\n", jokersA, insuranceA);
-        Assertions.assertTrue(rtpA < 100.0, "Multi-step strategy RTP must stay under 100%! Got: " + rtpA);
+        res.rtp = (res.totalCashed / (double) res.totalBet) * 100.0;
+        return res;
     }
 }
