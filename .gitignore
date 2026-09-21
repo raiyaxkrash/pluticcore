@@ -1,33 +1,121 @@
-# eclipse
-bin
-*.launch
-.settings
-.metadata
-.classpath
-.project
+# ==============================================================================
+#                              POCKET ODDS - .gitignore
+# ==============================================================================
 
-# idea
-out
+# ------------------------------------------------------------------------------
+# 1. Gradle & Build Output
+# ------------------------------------------------------------------------------
+build/
+.gradle/
+.gradletasknamecache
+gradle-app.setting
+
+# ------------------------------------------------------------------------------
+# 2. Java Compilation & Archives
+# ------------------------------------------------------------------------------
+*.class
+bin/
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Ensure Gradle wrapper jar is NOT ignored
+!gradle/wrapper/gradle-wrapper.jar
+
+# JVM crash logs
+hs_err_pid*
+replay_pid*
+
+# ------------------------------------------------------------------------------
+# 3. IDE Configurations & Metadata
+# ------------------------------------------------------------------------------
+# IntelliJ IDEA
+.idea/
+*.iml
 *.ipr
 *.iws
-*.iml
-.idea
+out/
 
-# gradle
-build
-.gradle
+# Eclipse
+.metadata/
+.settings/
+.classpath
+.project
+*.launch
+eclipse/
 
-# other
-eclipse
-run
+# Visual Studio Code
+.vscode/
+*.code-workspace
 
-# Files from Forge MDK
-forge*changelog.txt
+# NetBeans
+nbproject/private/
+nbbuild/
+dist/
+nbdist/
 
-logs/
+# ------------------------------------------------------------------------------
+# 4. Minecraft & Forge Runtime / Test Server
+# ------------------------------------------------------------------------------
 run/
+run-*/
 run-data/
+runClient/
+runServer/
+runGameTestServer/
+runs/
+mods/
+world/
+saves/
 eula.txt
+server.properties
+usercache.json
+whitelist.json
+ops.json
+banned-players.json
+banned-ips.json
+crash-reports/
+.mixin.out/
+
+# Forge MDK leftovers
+forge*changelog.txt
+*.patch
+
+# ------------------------------------------------------------------------------
+# 5. Logs & Temporary Files
+# ------------------------------------------------------------------------------
+logs/
 *.log
+*.log.gz
 *.gz
+
+# ------------------------------------------------------------------------------
+# 6. Operating System Artifacts
+# ------------------------------------------------------------------------------
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+
+# ------------------------------------------------------------------------------
+# 7. Antigravity & Tooling Caches
+# ------------------------------------------------------------------------------
 .system_generated/
+.cortex/
+.gemini/
+
