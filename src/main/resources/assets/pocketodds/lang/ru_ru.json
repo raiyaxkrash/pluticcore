@@ -87,6 +87,7 @@
 
   "pocketodds.deck.empty_pot": "Банк пуст. Нажмите ПКМ, чтобы вытянуть карту и начать серию!",
   "pocketodds.deck.cashed_out": "КЭШАУТ! Вы забрали %s фишек! (Серия: %s)",
+  "pocketodds.deck.cashed_out_items": "КЭШАУТ! Вы забрали: %s (Серия: %s)",
   "pocketodds.deck.card_patience": "[ Карта Терпения ] Банк: %s | Серия: %s",
   "pocketodds.deck.card_fortune": "[ Карта Фортуны ] Банк: %s | Серия: %s",
   "pocketodds.deck.card_riches": "[ Карта Богатства (1.5x)! ] Банк: %s | Серия: %s",

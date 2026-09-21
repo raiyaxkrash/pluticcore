@@ -9,6 +9,7 @@ public class DeckSession {
     public enum Status {
         ACTIVE,
         CASHOUT_COMMITTED,
+        DELIVERED,
         BUSTED
     }
 
@@ -101,7 +102,13 @@ public class DeckSession {
         int streak = tag.getInt("Streak");
         int pot = tag.getInt("PotUnits");
         boolean active = tag.contains("Active") ? tag.getBoolean("Active") : true;
-        Status st = tag.contains("Status") ? Status.valueOf(tag.getString("Status")) : Status.ACTIVE;
+        Status st = Status.ACTIVE;
+        if (tag.contains("Status")) {
+            try {
+                st = Status.valueOf(tag.getString("Status"));
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
         return new DeckSession(sId, pId, bet, streak, pot, active, st);
     }
 }

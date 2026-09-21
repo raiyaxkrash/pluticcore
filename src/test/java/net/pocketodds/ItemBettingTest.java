@@ -61,8 +61,8 @@ public class ItemBettingTest {
         Assertions.assertEquals(BetPreparation.PreparationStatus.PREPARED, data.getPreparedBet(prep.getPreparationId()).getStatus());
         Assertions.assertEquals(rollId, prep.getAssociatedId());
 
-        // Step 2: Debit transition via production RewardTransactionService
-        boolean debited = RewardTransactionService.debitBet(prep, data, true);
+        // Step 2: Debit transition via TestBetHelper (package-private production method)
+        boolean debited = TestBetHelper.applyDebitTransition(prep, data);
         Assertions.assertTrue(debited);
         Assertions.assertEquals(BetPreparation.PreparationStatus.DEBITED, data.getPreparedBet(prep.getPreparationId()).getStatus());
 
@@ -494,7 +494,7 @@ public class ItemBettingTest {
         // Step 1: Prepare and debit bet
         BetPreparation prep = RewardTransactionService.prepareBet(playerUUID, GameType.DICE, null, bet, beforeCrash);
         prep.setAssociatedId(prep.getPreparationId());
-        RewardTransactionService.debitBet(prep, beforeCrash, true);
+        TestBetHelper.applyDebitTransition(prep, beforeCrash);
 
         // Step 2: Instant game lost (0 rewards). Settle and commit bet atomically.
         RewardBundle emptyBundle = new RewardBundle(Collections.emptyList(), 0L, false);
@@ -577,5 +577,72 @@ public class ItemBettingTest {
         Assertions.assertEquals(1, rewards.size());
         Assertions.assertEquals(Items.DIAMOND, rewards.get(0).getItem());
         Assertions.assertEquals(2, rewards.get(0).getCount());
+    }
+
+    @Test
+    public void testDeliveredDeckCashoutNeverDuplicatedOnCrashRecovery() {
+        JackpotSavedData beforeCrash = new JackpotSavedData(100L);
+        UUID playerUUID = UUID.randomUUID();
+        BetSnapshot bet = BetSnapshot.fromItem(new ItemStack(Items.DIAMOND), 2, 64L);
+
+        DeckSession session = new DeckSession(playerUUID, bet);
+        session.setPotUnits(3);
+        beforeCrash.saveDeckSession(session);
+
+        UUID sessionId = session.getSessionId();
+        UUID cashoutTxId = UUID.nameUUIDFromBytes(("deck_cashout:" + sessionId).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        RewardBundle bundle = new RewardBundle(List.of(new ItemStack(Items.DIAMOND, 6)), 0L, false);
+
+        // Step 1: Cashout is committed and enqueued to outbox
+        beforeCrash.commitDeckCashout(sessionId, cashoutTxId, playerUUID, bundle);
+        Assertions.assertTrue(beforeCrash.hasPendingTransaction(cashoutTxId));
+
+        // Step 2: Rewards are delivered to player and outbox transaction removed
+        beforeCrash.removePendingTransaction(cashoutTxId);
+        Assertions.assertTrue(beforeCrash.isReceiptCompleted(cashoutTxId), "Delivering transaction must record a completion receipt!");
+
+        // Step 3: Session is marked delivered and removed
+        beforeCrash.markDeckSessionDelivered(sessionId);
+        Assertions.assertTrue(beforeCrash.isReceiptCompleted(sessionId));
+
+        // Step 4: Crash and reload world
+        CompoundTag tag = new CompoundTag();
+        beforeCrash.save(tag);
+        JackpotSavedData afterCrash = JackpotSavedData.load(tag);
+
+        // Crash recovery must NOT resurrect the completed cashout transaction
+        Assertions.assertFalse(afterCrash.hasPendingTransaction(cashoutTxId),
+                "Delivered cashout with completed receipt must NEVER be re-enqueued on recovery!");
+        Assertions.assertTrue(afterCrash.getPendingTransactions(playerUUID).isEmpty());
+    }
+
+    @Test
+    public void testFormatItemRewardsSummary() {
+        List<ItemStack> empty = Collections.emptyList();
+        Assertions.assertEquals("0", DeckOfFateItem.formatItemRewards(empty));
+
+        List<ItemStack> single = List.of(new ItemStack(Items.DIAMOND, 5));
+        Assertions.assertEquals("5x " + new ItemStack(Items.DIAMOND).getHoverName().getString(),
+                DeckOfFateItem.formatItemRewards(single));
+
+        List<ItemStack> multiple = List.of(
+                new ItemStack(Items.IRON_INGOT, 10),
+                new ItemStack(Items.GOLD_INGOT, 2)
+        );
+        String expectedMulti = "10x " + new ItemStack(Items.IRON_INGOT).getHoverName().getString()
+                + ", 2x " + new ItemStack(Items.GOLD_INGOT).getHoverName().getString();
+        Assertions.assertEquals(expectedMulti, DeckOfFateItem.formatItemRewards(multiple));
+    }
+
+    @Test
+    public void testDebitBetRequiresNonNullPlayer() {
+        JackpotSavedData data = new JackpotSavedData(100L);
+        BetSnapshot bet = BetSnapshot.fromItem(new ItemStack(Items.DIAMOND), 1, 64L);
+        BetPreparation prep = RewardTransactionService.prepareBet(UUID.randomUUID(), GameType.DICE, null, bet, data);
+
+        // Passing null player must throw NullPointerException, not silently bypass
+        Assertions.assertThrows(NullPointerException.class, () -> {
+            RewardTransactionService.debitBet(prep, null, data);
+        });
     }
 }

@@ -87,6 +87,7 @@
 
   "pocketodds.deck.empty_pot": "The pot is empty. Right click to draw a card and start a streak!",
   "pocketodds.deck.cashed_out": "CASHED OUT! You took %s chips! (Streak: %s)",
+  "pocketodds.deck.cashed_out_items": "CASHED OUT! You took: %s (Streak: %s)",
   "pocketodds.deck.card_patience": "[ Patience Card ] Pot: %s | Streak: %s",
   "pocketodds.deck.card_fortune": "[ Card of Fortune ] Pot: %s | Streak: %s",
   "pocketodds.deck.card_riches": "[ Card of Riches (1.5x)! ] Pot: %s | Streak: %s",

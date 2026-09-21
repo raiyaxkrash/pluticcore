@@ -36,7 +36,9 @@ import net.pocketodds.util.InventoryUtils;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public class DeckOfFateItem extends Item {
@@ -133,12 +135,19 @@ public class DeckOfFateItem extends Item {
                 // Deliver pending outbox transactions
                 RewardTransactionService.deliverPendingTransactions(serverPlayer.getUUID(), serverPlayer, jackpotData, InventoryUtils::giveOrDrop);
 
-                // Close and remove completed session from memory
-                jackpotData.removeDeckSession(sessionId);
+                // Mark delivered and record completion receipt
+                jackpotData.markDeckSessionDelivered(sessionId);
 
-                int totalCount = session.getPotUnits() * session.getInitialBet().getBetCount();
+                Component cashoutMsg;
+                if (session.getInitialBet().isItemBet()) {
+                    String summary = formatItemRewards(cashoutItems);
+                    cashoutMsg = Component.translatable("pocketodds.deck.cashed_out_items", summary, session.getStreak());
+                } else {
+                    int totalCount = session.getPotUnits() * session.getInitialBet().getBetCount();
+                    cashoutMsg = Component.translatable("pocketodds.deck.cashed_out", totalCount, session.getStreak());
+                }
                 FeedbackEffects.sendActionBar(serverPlayer,
-                        Component.translatable("pocketodds.deck.cashed_out", totalCount + " " + session.getInitialBet().getDisplayName().getString(), session.getStreak()).withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
+                        cashoutMsg.copy().withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
                 FeedbackEffects.playSound(serverPlayer, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.2f);
                 FeedbackEffects.spawnParticles(serverPlayer, ParticleTypes.FIREWORK, 20, 0.4, 0.4, 0.4, 0.1);
             }
@@ -246,8 +255,14 @@ public class DeckOfFateItem extends Item {
                     RewardTransactionService.enqueueRewardBundle(jackpotData, serverPlayer.getUUID(), bundle);
                     RewardTransactionService.deliverPendingTransactions(serverPlayer.getUUID(), serverPlayer, jackpotData, InventoryUtils::giveOrDrop);
 
+                    Component insMsg;
+                    if (bet.isItemBet()) {
+                        insMsg = Component.translatable("pocketodds.item_bet.insurance_refund", refundCount, bet.getItemPrototype().getHoverName());
+                    } else {
+                        insMsg = Component.translatable("pocketodds.deck.curse_insured", refundCount);
+                    }
                     FeedbackEffects.sendActionBar(serverPlayer,
-                            Component.translatable("pocketodds.deck.curse_insured", refundCount + " " + bet.getDisplayName().getString()).withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD));
+                            insMsg.copy().withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD));
                     FeedbackEffects.playSound(serverPlayer, SoundEvents.SHIELD_BLOCK, 1.0f, 1.0f);
                 } else {
                     InventoryUtils.giveOrDrop(serverPlayer, new ItemStack(ModItems.CURSED_CARD.get(), 1));
@@ -407,6 +422,31 @@ public class DeckOfFateItem extends Item {
             }
         }
         return list;
+    }
+
+    public static String formatItemRewards(List<ItemStack> items) {
+        if (items == null || items.isEmpty()) {
+            return "0";
+        }
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (ItemStack stack : items) {
+            if (stack != null && !stack.isEmpty()) {
+                String name = stack.getHoverName().getString();
+                counts.put(name, counts.getOrDefault(name, 0) + stack.getCount());
+            }
+        }
+        if (counts.isEmpty()) {
+            return "0";
+        }
+        List<String> parts = new ArrayList<>();
+        for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+            parts.add(entry.getValue() + "x " + entry.getKey());
+        }
+        if (parts.size() <= 3) {
+            return String.join(", ", parts);
+        } else {
+            return parts.get(0) + ", " + parts.get(1) + " + " + (parts.size() - 2) + " ...";
+        }
     }
 
     public static boolean isSessionOwner(DeckSession session, UUID playerUUID) {

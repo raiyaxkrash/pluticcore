@@ -29,6 +29,7 @@ public class JackpotSavedData extends SavedData {
     // 2PC prepared bets and server-side deck sessions
     private final Map<UUID, BetPreparation> preparedBets = new ConcurrentHashMap<>();
     private final Map<UUID, DeckSession> deckSessions = new ConcurrentHashMap<>();
+    private final Set<UUID> completedReceipts = ConcurrentHashMap.newKeySet();
 
     public static class RewardTransaction {
         private final UUID transactionId;
@@ -274,6 +275,18 @@ public class JackpotSavedData extends SavedData {
             }
         }
 
+        // Load completed receipts BEFORE deck recovery to prevent duplicate restore
+        if (tag.contains("CompletedReceipts", Tag.TAG_LIST)) {
+            ListTag receiptList = tag.getList("CompletedReceipts", Tag.TAG_STRING);
+            for (int i = 0; i < receiptList.size(); i++) {
+                try {
+                    data.completedReceipts.add(UUID.fromString(receiptList.getString(i)));
+                } catch (IllegalArgumentException e) {
+                    LOGGER.error("Pocket Odds: Failed to parse completed receipt '{}': {}", receiptList.getString(i), e.getMessage());
+                }
+            }
+        }
+
         // Load server-side deck sessions BEFORE prepared bets so crash recovery can inspect active deck sessions
         if (tag.contains("DeckSessions", Tag.TAG_COMPOUND)) {
             CompoundTag deckTag = tag.getCompound("DeckSessions");
@@ -285,6 +298,10 @@ public class JackpotSavedData extends SavedData {
                     // Recovery for CASHOUT_COMMITTED sessions where crash happened before outbox enqueue was completed
                     if (session.getStatus() == DeckSession.Status.CASHOUT_COMMITTED && session.getPotUnits() > 0) {
                         UUID cashoutTxId = UUID.nameUUIDFromBytes(("deck_cashout:" + session.getSessionId()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        if (data.isReceiptCompleted(cashoutTxId) || data.isReceiptCompleted(session.getSessionId())) {
+                            LOGGER.info("Pocket Odds Crash Recovery: Cashout for session {} was already completed (receipt present). Discarding session.", session.getSessionId());
+                            continue;
+                        }
                         if (!data.hasPendingTransaction(cashoutTxId)) {
                             LOGGER.warn("Pocket Odds Crash Recovery: Restoring missing cashout transaction {} for session {} of player {}",
                                     cashoutTxId, session.getSessionId(), session.getPlayerUUID());
@@ -295,6 +312,9 @@ public class JackpotSavedData extends SavedData {
                                 ));
                             }
                         }
+                    } else if (session.getStatus() == DeckSession.Status.DELIVERED) {
+                        // Completed and delivered session: no recovery needed
+                        continue;
                     }
                 } catch (Exception e) {
                     LOGGER.error("Pocket Odds: Failed to load deck session [key={}]: {}", key, e.getMessage(), e);
@@ -424,6 +444,17 @@ public class JackpotSavedData extends SavedData {
             tag.put("DeckSessions", deckTag);
         }
 
+        // Save completed receipts (capped to 5000)
+        if (!completedReceipts.isEmpty()) {
+            ListTag receiptList = new ListTag();
+            int count = 0;
+            for (UUID id : completedReceipts) {
+                receiptList.add(net.minecraft.nbt.StringTag.valueOf(id.toString()));
+                if (++count >= 5000) break;
+            }
+            tag.put("CompletedReceipts", receiptList);
+        }
+
         return tag;
     }
 
@@ -511,6 +542,39 @@ public class JackpotSavedData extends SavedData {
         if (sessionId != null && deckSessions.remove(sessionId) != null) {
             setDirty();
         }
+    }
+
+    public synchronized void markDeckSessionDelivered(UUID sessionId) {
+        DeckSession s = deckSessions.get(sessionId);
+        if (s != null) {
+            s.setStatus(DeckSession.Status.DELIVERED);
+            s.setActive(false);
+        }
+        if (sessionId != null) {
+            UUID cashoutTxId = UUID.nameUUIDFromBytes(("deck_cashout:" + sessionId).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            recordCompletedReceipt(cashoutTxId);
+            recordCompletedReceipt(sessionId);
+            deckSessions.remove(sessionId);
+        }
+        setDirty();
+    }
+
+    public synchronized void recordCompletedReceipt(UUID id) {
+        if (id != null) {
+            completedReceipts.add(id);
+            if (completedReceipts.size() > 5000) {
+                Iterator<UUID> it = completedReceipts.iterator();
+                if (it.hasNext()) {
+                    it.next();
+                    it.remove();
+                }
+            }
+            setDirty();
+        }
+    }
+
+    public synchronized boolean isReceiptCompleted(UUID id) {
+        return id != null && completedReceipts.contains(id);
     }
 
     // --- Transactional Outbox Methods ---
@@ -604,6 +668,7 @@ public class JackpotSavedData extends SavedData {
             if (tx.getTransactionId().equals(transactionId)) {
                 boolean removed = tx.confirmDeliveredLine(lineId);
                 if (tx.isEmpty()) {
+                    recordCompletedReceipt(tx.getTransactionId());
                     it.remove();
                 }
                 setDirty();
@@ -619,6 +684,7 @@ public class JackpotSavedData extends SavedData {
             if (tx.getTransactionId().equals(transactionId)) {
                 boolean removed = tx.removeDeliveredItem(stack);
                 if (tx.isEmpty()) {
+                    recordCompletedReceipt(tx.getTransactionId());
                     it.remove();
                 }
                 setDirty();
@@ -630,6 +696,7 @@ public class JackpotSavedData extends SavedData {
 
     public synchronized void removePendingTransaction(UUID transactionId) {
         if (pendingTransactions.removeIf(tx -> tx.getTransactionId().equals(transactionId))) {
+            recordCompletedReceipt(transactionId);
             setDirty();
         }
     }

@@ -54,10 +54,8 @@ public class RewardTransactionService {
      */
     public static boolean debitBet(BetPreparation prep, ServerPlayer player, JackpotSavedData jackpotData) {
         Objects.requireNonNull(prep, "prep must not be null");
+        Objects.requireNonNull(player, "player must not be null");
         Objects.requireNonNull(jackpotData, "jackpotData must not be null");
-        if (player == null) {
-            return debitBet(prep, jackpotData, true);
-        }
 
         BetSnapshot bet = prep.getBetSnapshot();
         if (InventoryUtils.countMatching(player, bet) < bet.getBetCount()) {
@@ -71,13 +69,14 @@ public class RewardTransactionService {
             return false;
         }
 
-        return debitBet(prep, jackpotData, false);
+        return applyDebitTransition(prep, jackpotData);
     }
 
     /**
-     * Phase 2 of 2PC: Core debit transition. Can bypass physical player inventory check for server testing.
+     * Internal transition of 2PC debit state and jackpot contribution.
+     * Package-private to prevent external bypass of player inventory debiting.
      */
-    public static boolean debitBet(BetPreparation prep, JackpotSavedData jackpotData, boolean bypassInventoryCheck) {
+    static boolean applyDebitTransition(BetPreparation prep, JackpotSavedData jackpotData) {
         Objects.requireNonNull(prep, "prep must not be null");
         Objects.requireNonNull(jackpotData, "jackpotData must not be null");
 
