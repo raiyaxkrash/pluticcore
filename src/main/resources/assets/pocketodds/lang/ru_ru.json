@@ -183,6 +183,7 @@
   "shop.pocketodds.error.insufficient_funds": "Недостаточно фишек в выбранном источнике оплаты!",
   "shop.pocketodds.error.advancement_required": "Для покупки требуется выполнить необходимое достижение!",
   "shop.pocketodds.error.advancement_missing": "Требуемое достижение не зарегистрировано на сервере!",
+  "shop.pocketodds.error.stage_required": "Для покупки требуется достичь необходимой стадии игры!",
   "shop.pocketodds.error.unauthorized": "Ошибка авторизации транзакции: чужой идентификатор операции!",
   "shop.pocketodds.search.hint": "Поиск...",
   "shop.pocketodds.limit.per_player": " шт на игрока",

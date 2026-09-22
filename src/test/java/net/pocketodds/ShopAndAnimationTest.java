@@ -377,7 +377,7 @@ public class ShopAndAnimationTest {
         SyncShopCatalogS2CPacket.ClientShopEntry entry = new SyncShopCatalogS2CPacket.ClientShopEntry(
                 "mek_basic_circuit", new ItemStack(Items.IRON_INGOT, 2), 2048L,
                 ShopCategory.COMPONENTS.ordinal(), ShopLimitPeriod.WEEKLY.ordinal(), 10, true,
-                true, "shop.pocketodds.mek_basic_circuit", "desc"
+                true, true, "stage_mid", "shop.pocketodds.mek_basic_circuit", "desc"
         );
         SyncShopCatalogS2CPacket syncPacket = new SyncShopCatalogS2CPacket(8192L, List.of(entry));
         FriendlyByteBuf syncBuf = new FriendlyByteBuf(Unpooled.buffer());
@@ -392,6 +392,8 @@ public class ShopAndAnimationTest {
         Assertions.assertEquals(10, decodedEntry.getRemainingLimit());
         Assertions.assertTrue(decodedEntry.isAvailable());
         Assertions.assertTrue(decodedEntry.isAdvancementSatisfied());
+        Assertions.assertTrue(decodedEntry.isStageSatisfied());
+        Assertions.assertEquals("stage_mid", decodedEntry.getRequiredStage());
     }
 
     @Test
@@ -491,12 +493,41 @@ public class ShopAndAnimationTest {
     }
 
     @Test
-    public void testLongPriceOverflowRejection() {
-        ShopOffer zeroPrice = new ShopOffer("zero", "minecraft:dirt", 1, 0L, ShopCategory.RESOURCES, 0, ShopLimitPeriod.UNLIMITED, "", true, 1, "n", "d");
-        Assertions.assertEquals(1L, zeroPrice.getPriceCredits());
+    public void testInvalidPriceRejectedEntirely() {
+        // 1. Constructor throws IllegalArgumentException for invalid prices
+        Assertions.assertThrows(IllegalArgumentException.class, () ->
+                new ShopOffer("zero", "minecraft:dirt", 1, 0L, ShopCategory.RESOURCES, 0, ShopLimitPeriod.UNLIMITED, "", true, 1, "n", "d")
+        );
+        Assertions.assertThrows(IllegalArgumentException.class, () ->
+                new ShopOffer("neg", "minecraft:dirt", 1, -100L, ShopCategory.RESOURCES, 0, ShopLimitPeriod.UNLIMITED, "", true, 1, "n", "d")
+        );
+        Assertions.assertThrows(IllegalArgumentException.class, () ->
+                new ShopOffer("huge", "minecraft:dirt", 1, Long.MAX_VALUE, ShopCategory.RESOURCES, 0, ShopLimitPeriod.UNLIMITED, "", true, 1, "n", "d")
+        );
 
-        ShopOffer hugePrice = new ShopOffer("huge", "minecraft:dirt", 1, Long.MAX_VALUE, ShopCategory.RESOURCES, 0, ShopLimitPeriod.UNLIMITED, "", true, 1, "n", "d");
-        Assertions.assertEquals(ShopOffer.MAX_PRICE_CREDITS, hugePrice.getPriceCredits());
+        // 2. fromJson returns null for invalid prices, rejecting offer entirely from catalog
+        JsonObject jsonZero = new JsonObject();
+        jsonZero.addProperty("offerId", "offer_zero");
+        jsonZero.addProperty("item", "minecraft:dirt");
+        jsonZero.addProperty("priceCredits", 0L);
+        Assertions.assertNull(ShopOffer.fromJson(jsonZero), "Zero price must be completely rejected");
+
+        JsonObject jsonNegative = new JsonObject();
+        jsonNegative.addProperty("offerId", "offer_neg");
+        jsonNegative.addProperty("item", "minecraft:dirt");
+        jsonNegative.addProperty("priceCredits", -50L);
+        Assertions.assertNull(ShopOffer.fromJson(jsonNegative), "Negative price must be completely rejected");
+
+        JsonObject jsonHuge = new JsonObject();
+        jsonHuge.addProperty("offerId", "offer_huge");
+        jsonHuge.addProperty("item", "minecraft:dirt");
+        jsonHuge.addProperty("priceCredits", 2_000_000_000L);
+        Assertions.assertNull(ShopOffer.fromJson(jsonHuge), "Price exceeding MAX_PRICE_CREDITS must be completely rejected");
+
+        JsonObject jsonNoPrice = new JsonObject();
+        jsonNoPrice.addProperty("offerId", "offer_noprice");
+        jsonNoPrice.addProperty("item", "minecraft:dirt");
+        Assertions.assertNull(ShopOffer.fromJson(jsonNoPrice), "Missing price must be completely rejected");
     }
 
     @Test
@@ -912,6 +943,7 @@ public class ShopAndAnimationTest {
         JsonObject objA = new JsonObject();
         objA.addProperty("offerId", "offer_alpha");
         objA.addProperty("item", "minecraft:iron_ingot");
+        objA.addProperty("priceCredits", 64L);
         batch1.put(new ResourceLocation("pocketodds", "alpha"), objA);
         ShopOfferRegistry.INSTANCE.applyResources(batch1);
 
@@ -922,6 +954,7 @@ public class ShopAndAnimationTest {
         JsonObject objB = new JsonObject();
         objB.addProperty("offerId", "offer_beta");
         objB.addProperty("item", "minecraft:gold_ingot");
+        objB.addProperty("priceCredits", 128L);
         batch2.put(new ResourceLocation("pocketodds", "beta"), objB);
         ShopOfferRegistry.INSTANCE.applyResources(batch2);
 
@@ -973,6 +1006,18 @@ public class ShopAndAnimationTest {
         Assertions.assertFalse(tx.getPlayerUUID().equals(strangerPlayer),
                 "Stranger player UUID must not match transaction owner UUID");
         Assertions.assertTrue(tx.getPlayerUUID().equals(originalOwner));
+
+        // Real method execution test with mocked stranger player
+        net.minecraft.server.level.ServerPlayer mockStranger = org.mockito.Mockito.mock(net.minecraft.server.level.ServerPlayer.class);
+        org.mockito.Mockito.when(mockStranger.getUUID()).thenReturn(strangerPlayer);
+
+        boolean result = ShopService.resumeOrCompleteExistingOperation(mockStranger, tx, data);
+        Assertions.assertFalse(result, "resumeOrCompleteExistingOperation must reject operation when player UUID does not match tx.getPlayerUUID()");
+
+        // Verify unauthorized error message was sent to stranger player
+        org.mockito.Mockito.verify(mockStranger).sendSystemMessage(org.mockito.ArgumentMatchers.argThat(comp ->
+                comp != null && comp.toString().contains("shop.pocketodds.error.unauthorized")
+        ));
     }
 
     @Test
@@ -1070,5 +1115,60 @@ public class ShopAndAnimationTest {
 
         long rarePrice = net.pocketodds.command.ShopCatalogGeneratorCommand.calculateBasePrice(ShopCategory.RARE, "atm_star");
         Assertions.assertEquals(8192L, rarePrice);
+    }
+
+    @Test
+    public void testMinAndMaxStageValidation() {
+        net.minecraft.server.level.ServerPlayer mockPlayer = org.mockito.Mockito.mock(net.minecraft.server.level.ServerPlayer.class);
+        Set<String> tags = new HashSet<>();
+        org.mockito.Mockito.when(mockPlayer.getTags()).thenReturn(tags);
+
+        // 1. Unrestricted offer (no minStage, no maxStage)
+        Assertions.assertTrue(ShopService.isStageSatisfied(mockPlayer, "", ""));
+        Assertions.assertTrue(ShopService.isStageSatisfied(mockPlayer, null, null));
+
+        // 2. minStage required but player lacks tag
+        Assertions.assertFalse(ShopService.isStageSatisfied(mockPlayer, "stage_nether", ""));
+
+        // 3. Player gets tag -> minStage satisfied
+        tags.add("stage_nether");
+        Assertions.assertTrue(ShopService.isStageSatisfied(mockPlayer, "stage_nether", ""));
+
+        // 4. maxStage constraint: once player reaches maxStage, early offer becomes locked
+        Assertions.assertTrue(ShopService.isStageSatisfied(mockPlayer, "stage_nether", "stage_endgame"));
+        tags.add("stage_endgame");
+        Assertions.assertFalse(ShopService.isStageSatisfied(mockPlayer, "stage_nether", "stage_endgame"),
+                "Offer must be locked when player reached or exceeded maxStage");
+
+        // 5. Test with custom stageChecker predicate
+        ShopService.setStageChecker((player, st) -> st.equals("custom_quest_complete"));
+        try {
+            Assertions.assertTrue(ShopService.isStageSatisfied(mockPlayer, "custom_quest_complete", ""));
+            Assertions.assertFalse(ShopService.isStageSatisfied(mockPlayer, "custom_quest_incomplete", ""));
+        } finally {
+            ShopService.setStageChecker(null);
+        }
+    }
+
+    @Test
+    public void testGeneratorCreativeCategoryAndLimits() {
+        // Creative items must get CREATIVE category, price 262144 - 1048576, limit 1 PER_PLAYER
+        Assertions.assertEquals(ShopCategory.CREATIVE,
+                net.pocketodds.command.ShopCatalogGeneratorCommand.detectCategory("create/creative_motor"));
+        Assertions.assertEquals(ShopCategory.CREATIVE,
+                net.pocketodds.command.ShopCatalogGeneratorCommand.detectCategory("mekanism/creative_energy_cube"));
+        Assertions.assertEquals(ShopCategory.CREATIVE,
+                net.pocketodds.command.ShopCatalogGeneratorCommand.detectCategory("refinedstorage/creative_controller"));
+        Assertions.assertEquals(ShopCategory.CREATIVE,
+                net.pocketodds.command.ShopCatalogGeneratorCommand.detectCategory("functionalstorage/creative_upgrade"));
+
+        long motorPrice = net.pocketodds.command.ShopCatalogGeneratorCommand.calculateBasePrice(ShopCategory.CREATIVE, "creative_motor");
+        Assertions.assertEquals(262144L, motorPrice);
+
+        long cubePrice = net.pocketodds.command.ShopCatalogGeneratorCommand.calculateBasePrice(ShopCategory.CREATIVE, "creative_energy_cube");
+        Assertions.assertEquals(1048576L, cubePrice);
+
+        long poolPrice = net.pocketodds.command.ShopCatalogGeneratorCommand.calculateBasePrice(ShopCategory.CREATIVE, "creative_pool");
+        Assertions.assertEquals(524288L, poolPrice);
     }
 }

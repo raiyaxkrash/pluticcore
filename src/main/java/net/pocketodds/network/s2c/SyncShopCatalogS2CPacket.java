@@ -23,12 +23,15 @@ public class SyncShopCatalogS2CPacket {
         private final int remainingLimit;
         private final boolean available;
         private final boolean advancementSatisfied;
+        private final boolean stageSatisfied;
+        private final String requiredStage;
         private final String nameKey;
         private final String descriptionKey;
 
         public ClientShopEntry(String offerId, ItemStack rewardStack, long priceCredits, int categoryOrdinal,
                                int limitPeriodOrdinal, int remainingLimit, boolean available,
-                               boolean advancementSatisfied, String nameKey, String descriptionKey) {
+                               boolean advancementSatisfied, boolean stageSatisfied, String requiredStage,
+                               String nameKey, String descriptionKey) {
             this.offerId = offerId != null ? offerId : "";
             this.rewardStack = rewardStack != null ? rewardStack : ItemStack.EMPTY;
             this.priceCredits = priceCredits;
@@ -37,8 +40,16 @@ public class SyncShopCatalogS2CPacket {
             this.remainingLimit = remainingLimit;
             this.available = available;
             this.advancementSatisfied = advancementSatisfied;
+            this.stageSatisfied = stageSatisfied;
+            this.requiredStage = requiredStage != null ? requiredStage : "";
             this.nameKey = nameKey != null ? nameKey : "";
             this.descriptionKey = descriptionKey != null ? descriptionKey : "";
+        }
+
+        public ClientShopEntry(String offerId, ItemStack rewardStack, long priceCredits, int categoryOrdinal,
+                               int limitPeriodOrdinal, int remainingLimit, boolean available,
+                               boolean advancementSatisfied, String nameKey, String descriptionKey) {
+            this(offerId, rewardStack, priceCredits, categoryOrdinal, limitPeriodOrdinal, remainingLimit, available, advancementSatisfied, true, "", nameKey, descriptionKey);
         }
 
         public ClientShopEntry(FriendlyByteBuf buf) {
@@ -50,6 +61,8 @@ public class SyncShopCatalogS2CPacket {
             this.remainingLimit = buf.readVarInt();
             this.available = buf.readBoolean();
             this.advancementSatisfied = buf.readBoolean();
+            this.stageSatisfied = buf.readBoolean();
+            this.requiredStage = buf.readUtf(128);
             this.nameKey = buf.readUtf(128);
             this.descriptionKey = buf.readUtf(128);
         }
@@ -63,6 +76,8 @@ public class SyncShopCatalogS2CPacket {
             buf.writeVarInt(remainingLimit);
             buf.writeBoolean(available);
             buf.writeBoolean(advancementSatisfied);
+            buf.writeBoolean(stageSatisfied);
+            buf.writeUtf(requiredStage, 128);
             buf.writeUtf(nameKey, 128);
             buf.writeUtf(descriptionKey, 128);
         }
@@ -76,6 +91,8 @@ public class SyncShopCatalogS2CPacket {
         public int getRemainingLimit() { return remainingLimit; }
         public boolean isAvailable() { return available; }
         public boolean isAdvancementSatisfied() { return advancementSatisfied; }
+        public boolean isStageSatisfied() { return stageSatisfied; }
+        public String getRequiredStage() { return requiredStage; }
         public String getNameKey() { return nameKey; }
         public String getDescriptionKey() { return descriptionKey; }
     }

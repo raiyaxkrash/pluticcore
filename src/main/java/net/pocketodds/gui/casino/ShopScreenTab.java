@@ -241,8 +241,9 @@ public class ShopScreenTab {
 
             boolean hasLimit = entry.getRemainingLimit() != 0;
             boolean hasAdvancement = entry.isAdvancementSatisfied();
+            boolean hasStage = entry.isStageSatisfied();
             boolean hasFunds = available >= entry.getPriceCredits();
-            boolean canBuy = hasLimit && hasAdvancement && hasFunds && entry.isAvailable();
+            boolean canBuy = hasLimit && hasAdvancement && hasStage && hasFunds && entry.isAvailable();
 
             boolean isCreativeCategory = entry.getCategoryOrdinal() == ShopCategory.CREATIVE.ordinal();
             boolean isVeryExpensive = entry.getPriceCredits() >= 262144L;
@@ -252,6 +253,8 @@ public class ShopScreenTab {
                 btnText = "Лимит";
             } else if (!hasAdvancement) {
                 btnText = "Прогресс";
+            } else if (!hasStage) {
+                btnText = "Стадия";
             } else if (!hasFunds) {
                 btnText = "Нет ср-в";
             } else if (isCreativeCategory || isVeryExpensive) {
@@ -456,6 +459,14 @@ public class ShopScreenTab {
                 costTooltip.add(Component.literal("§7Номиналы: " + ShopOffer.formatChipBreakdown(entry.getPriceCredits())));
                 if (!entry.isAdvancementSatisfied()) {
                     costTooltip.add(Component.literal("§cТребуется достижение: allthemods/atm_star"));
+                }
+                if (!entry.isStageSatisfied()) {
+                    String req = entry.getRequiredStage();
+                    if (req.startsWith("max:")) {
+                        costTooltip.add(Component.literal("§cЗаблокировано после стадии: " + req.substring(4)));
+                    } else {
+                        costTooltip.add(Component.literal("§cТребуется стадия игры: " + req));
+                    }
                 }
                 if (entry.getRemainingLimit() == 0) {
                     costTooltip.add(Component.literal("§cЛимит покупок исчерпан!"));

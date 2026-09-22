@@ -36,6 +36,56 @@ public class ShopService {
             ChipTier.COPPER
     };
 
+    private static java.util.function.BiFunction<ServerPlayer, String, Boolean> stageChecker = null;
+
+    public static void setStageChecker(java.util.function.BiFunction<ServerPlayer, String, Boolean> checker) {
+        stageChecker = checker;
+    }
+
+    public static boolean hasStage(ServerPlayer player, String stage) {
+        if (stage == null || stage.trim().isEmpty()) {
+            return true;
+        }
+        if (player == null) {
+            return false;
+        }
+        String s = stage.trim();
+        if (stageChecker != null) {
+            Boolean res = stageChecker.apply(player, s);
+            if (res != null) return res;
+        }
+        // 1. Check player scoreboard tags
+        if (player.getTags().contains(s) || player.getTags().contains("stage:" + s) || player.getTags().contains("gamestage:" + s)) {
+            return true;
+        }
+        // 2. Reflection check for GameStageHelper
+        try {
+            Class<?> helperClass = Class.forName("net.darkhax.gamestages.GameStageHelper");
+            java.lang.reflect.Method hasStageMethod = helperClass.getMethod("hasStage", net.minecraft.world.entity.player.Player.class, String.class);
+            Object result = hasStageMethod.invoke(null, player, s);
+            if (result instanceof Boolean b) {
+                return b;
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    public static boolean isStageSatisfied(ServerPlayer player, String minStage, String maxStage) {
+        if (player == null) return false;
+        if (minStage != null && !minStage.trim().isEmpty()) {
+            if (!hasStage(player, minStage)) {
+                return false;
+            }
+        }
+        if (maxStage != null && !maxStage.trim().isEmpty()) {
+            if (hasStage(player, maxStage)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     public static boolean isAdvancementSatisfied(ServerPlayer player, String requiredAdvancement) {
         if (requiredAdvancement == null || requiredAdvancement.trim().isEmpty()) {
             return true;
@@ -246,6 +296,10 @@ public class ShopService {
         if (jackpotData.isShopOperationProcessed(operationId)) {
             ShopPurchaseTransaction existingTx = jackpotData.getShopPurchase(operationId);
             if (existingTx != null) {
+                if (!existingTx.getPlayerUUID().equals(player.getUUID())) {
+                    sendShopError(player, "shop.pocketodds.error.unauthorized");
+                    return false;
+                }
                 return resumeOrCompleteExistingOperation(player, existingTx, jackpotData);
             }
             syncShopToPlayer(player, jackpotData);
@@ -277,6 +331,12 @@ public class ShopService {
         // 5. Verify requiredAdvancement
         if (!isAdvancementSatisfied(player, offer.getRequiredAdvancement())) {
             sendShopError(player, "shop.pocketodds.error.advancement_required");
+            return false;
+        }
+
+        // 5.5 Verify minStage and maxStage
+        if (!isStageSatisfied(player, offer.getMinStage(), offer.getMaxStage())) {
+            sendShopError(player, "shop.pocketodds.error.stage_required");
             return false;
         }
 
@@ -475,6 +535,13 @@ public class ShopService {
                     : 0;
             int remainingLimit = (o.getPurchaseLimit() > 0) ? Math.max(0, o.getPurchaseLimit() - used) : -1;
             boolean advancementOk = isAdvancementSatisfied(player, o.getRequiredAdvancement());
+            boolean stageOk = isStageSatisfied(player, o.getMinStage(), o.getMaxStage());
+            String reqStage = "";
+            if (!isStageSatisfied(player, o.getMinStage(), "")) {
+                reqStage = o.getMinStage();
+            } else if (!isStageSatisfied(player, "", o.getMaxStage())) {
+                reqStage = "max:" + o.getMaxStage();
+            }
             boolean canAfford = totalCredits >= o.getPriceCredits();
             boolean limitOk = (remainingLimit == -1 || remainingLimit > 0);
             return new SyncShopCatalogS2CPacket.ClientShopEntry(
@@ -484,8 +551,10 @@ public class ShopService {
                     o.getCategory().ordinal(),
                     o.getLimitPeriod().ordinal(),
                     remainingLimit,
-                    canAfford && limitOk && advancementOk,
+                    canAfford && limitOk && advancementOk && stageOk,
                     advancementOk,
+                    stageOk,
+                    reqStage,
                     o.getNameKey(),
                     o.getDescriptionKey()
             );
@@ -494,7 +563,7 @@ public class ShopService {
         ModMessages.sendToPlayer(new SyncShopCatalogS2CPacket(finalPouchCredits, entries), player);
     }
 
-    private static boolean resumeOrCompleteExistingOperation(ServerPlayer player,
+    public static boolean resumeOrCompleteExistingOperation(ServerPlayer player,
                                                              ShopPurchaseTransaction tx,
                                                              JackpotSavedData jackpotData) {
         if (!tx.getPlayerUUID().equals(player.getUUID())) {

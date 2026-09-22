@@ -98,17 +98,28 @@ public class ShopCatalogGeneratorCommand {
             ShopCategory category = detectCategory(id.getPath());
             long price = calculateBasePrice(category, id.getPath());
 
+            int purchaseLimit = 0;
+            String limitPeriod = "UNLIMITED";
+            String requiredAdvancement = "";
+            int sortOrder = 100;
+            if (category == ShopCategory.CREATIVE) {
+                purchaseLimit = 1;
+                limitPeriod = "PER_PLAYER";
+                requiredAdvancement = "allthemods:allthemodium/atm_star";
+                sortOrder = 1000;
+            }
+
             JsonObject json = new JsonObject();
             json.addProperty("offerId", offerId);
             json.addProperty("item", id.toString());
             json.addProperty("count", 1);
             json.addProperty("priceCredits", price);
             json.addProperty("category", category.name());
-            json.addProperty("purchaseLimit", 0);
-            json.addProperty("limitPeriod", "UNLIMITED");
-            json.addProperty("requiredAdvancement", "");
+            json.addProperty("purchaseLimit", purchaseLimit);
+            json.addProperty("limitPeriod", limitPeriod);
+            json.addProperty("requiredAdvancement", requiredAdvancement);
             json.addProperty("enabled", false);
-            json.addProperty("sortOrder", 100);
+            json.addProperty("sortOrder", sortOrder);
 
             JsonArray mods = new JsonArray();
             mods.add(namespace);
@@ -160,7 +171,10 @@ public class ShopCatalogGeneratorCommand {
 
     public static ShopCategory detectCategory(String path) {
         String p = path.toLowerCase(Locale.ROOT);
-        if (p.contains("creative") || p.contains("star") || p.contains("infinity") || p.contains("relic") || p.contains("unobtainium")) {
+        if (p.contains("creative")) {
+            return ShopCategory.CREATIVE;
+        }
+        if (p.contains("star") || p.contains("infinity") || p.contains("relic") || p.contains("unobtainium")) {
             return ShopCategory.RARE;
         }
         if (p.contains("circuit") || p.contains("alloy") || p.contains("processor") || p.contains("gear")
@@ -191,6 +205,15 @@ public class ShopCatalogGeneratorCommand {
 
     public static long calculateBasePrice(ShopCategory category, String path) {
         String p = path.toLowerCase(Locale.ROOT);
+        if (category == ShopCategory.CREATIVE) {
+            if (p.contains("controller") || p.contains("energy") || p.contains("cell") || p.contains("cube")) {
+                return 1_048_576L;
+            }
+            if (p.contains("pool") || p.contains("jar") || p.contains("compressor")) {
+                return 524_288L;
+            }
+            return 262_144L;
+        }
         if (category == ShopCategory.RARE) {
             return 8192L;
         }

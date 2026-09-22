@@ -48,7 +48,10 @@ public class ShopOffer {
         this.offerId = offerId != null ? offerId : "unknown";
         this.itemId = itemId != null ? itemId : "minecraft:air";
         this.count = Math.max(1, Math.min(count, 64));
-        this.priceCredits = Math.max(1L, Math.min(MAX_PRICE_CREDITS, priceCredits));
+        if (priceCredits <= 0L || priceCredits > MAX_PRICE_CREDITS) {
+            throw new IllegalArgumentException("Invalid priceCredits " + priceCredits + " for offer '" + offerId + "'. Must be between 1 and " + MAX_PRICE_CREDITS);
+        }
+        this.priceCredits = priceCredits;
         this.category = category != null ? category : ShopCategory.RESOURCES;
         this.purchaseLimit = Math.max(0, purchaseLimit);
         this.limitPeriod = limitPeriod != null ? limitPeriod : ShopLimitPeriod.UNLIMITED;
@@ -261,11 +264,16 @@ public class ShopOffer {
         }
 
         int count = json.has("count") ? json.get("count").getAsInt() : 1;
-        long priceCredits = 1L;
-        if (json.has("priceCredits")) {
-            priceCredits = json.get("priceCredits").getAsLong();
-        } else if (json.has("price")) {
-            priceCredits = json.get("price").getAsLong();
+        if (!json.has("priceCredits") && !json.has("price")) {
+            PocketOdds.LOGGER.error("Pocket Odds: Missing price in shop offer '{}'. Offer rejected.", offerId);
+            return null;
+        }
+
+        long priceCredits = json.has("priceCredits") ? json.get("priceCredits").getAsLong() : json.get("price").getAsLong();
+        if (priceCredits <= 0L || priceCredits > MAX_PRICE_CREDITS) {
+            PocketOdds.LOGGER.error("Pocket Odds: Invalid priceCredits {} for shop offer '{}'. Price must be between 1 and {}. Offer rejected.",
+                    priceCredits, offerId, MAX_PRICE_CREDITS);
+            return null;
         }
 
         String categoryStr = json.has("category") ? json.get("category").getAsString() : "RESOURCES";

@@ -183,6 +183,7 @@
   "shop.pocketodds.error.insufficient_funds": "Not enough chips in the selected payment source!",
   "shop.pocketodds.error.advancement_required": "Required advancement has not been completed!",
   "shop.pocketodds.error.advancement_missing": "Required advancement is not registered on server!",
+  "shop.pocketodds.error.stage_required": "A required game stage has not been reached for this purchase!",
   "shop.pocketodds.error.unauthorized": "Transaction authorization error: mismatched operation player ID!",
   "shop.pocketodds.search.hint": "Search...",
   "shop.pocketodds.limit.per_player": " per player",
