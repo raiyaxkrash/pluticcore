@@ -72,8 +72,9 @@ public class PocketCasinoScreen extends AbstractContainerScreen<PocketCasinoMenu
         return shopTab;
     }
 
-    public void updateShopCatalog(int playerTokens, List<SyncShopCatalogS2CPacket.ClientShopEntry> entries) {
-        this.shopTab.updateCatalog(playerTokens, entries);
+    public void updateShopCatalog(long pouchCredits, List<SyncShopCatalogS2CPacket.ClientShopEntry> entries) {
+        this.pouchCredits = pouchCredits;
+        this.shopTab.updateCatalog(pouchCredits, entries);
         if (menu.getCurrentCategory() == CasinoCategory.PRIZE_SHOP) {
             rebuildWidgetsForCurrentCategory();
         }

@@ -1,0 +1,16 @@
+{
+    "offerId": "ars_creative_source_jar",
+    "item": "ars_nouveau:creative_source_jar",
+    "count": 1,
+    "priceCredits": 524288,
+    "category": "CREATIVE",
+    "purchaseLimit": 1,
+    "limitPeriod": "PER_PLAYER",
+    "requiredAdvancement": "allthemods:allthemodium/atm_star",
+    "requiredMods": ["ars_nouveau"],
+    "requiredItems": ["ars_nouveau:creative_source_jar"],
+    "enabled": true,
+    "sortOrder": 203,
+    "nameKey": "shop.pocketodds.ars_creative_source_jar",
+    "descriptionKey": "shop.pocketodds.ars_creative_source_jar.desc"
+}

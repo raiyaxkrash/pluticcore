@@ -1,14 +1,14 @@
 ﻿{
-  "offerId": "ironjetpacks_strap",
-  "itemId": "ironjetpacks:strap",
-  "count": 1,
-  "price": 15,
-  "category": "TRAVEL",
-  "purchaseLimit": 4,
-  "limitPeriod": "WEEKLY",
-  "requiredAdvancement": "",
-  "enabled": true,
-  "sortOrder": 230,
-  "nameKey": "shop.pocketodds.ironjetpacks_strap",
-  "descriptionKey": "shop.pocketodds.ironjetpacks_strap.desc"
+    "offerId":  "ironjetpacks_strap",
+    "itemId":  "ironjetpacks:strap",
+    "count":  1,
+    "priceCredits":  512,
+    "category":  "TRAVEL",
+    "purchaseLimit":  4,
+    "limitPeriod":  "WEEKLY",
+    "requiredAdvancement":  "",
+    "enabled":  true,
+    "sortOrder":  230,
+    "nameKey":  "shop.pocketodds.ironjetpacks_strap",
+    "descriptionKey":  "shop.pocketodds.ironjetpacks_strap.desc"
 }

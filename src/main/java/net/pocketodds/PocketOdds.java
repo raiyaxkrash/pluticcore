@@ -41,12 +41,30 @@ public class PocketOdds {
         // Register event listeners on Forge bus
         MinecraftForge.EVENT_BUS.register(this);
         MinecraftForge.EVENT_BUS.addListener(this::onAddReloadListeners);
+        MinecraftForge.EVENT_BUS.addListener(this::onDatapackSync);
+        MinecraftForge.EVENT_BUS.addListener(this::onRegisterCommands);
 
         LOGGER.info("Pocket Odds initialized!");
     }
 
     private void onAddReloadListeners(net.minecraftforge.event.AddReloadListenerEvent event) {
         event.addListener(net.pocketodds.shop.ShopOfferRegistry.INSTANCE);
+    }
+
+    private void onDatapackSync(net.minecraftforge.event.OnDatapackSyncEvent event) {
+        if (event.getPlayer() != null) {
+            net.pocketodds.shop.ShopService.syncShopToPlayer(event.getPlayer(),
+                    net.pocketodds.data.JackpotSavedData.get(event.getPlayer().serverLevel()));
+        } else if (event.getPlayerList() != null) {
+            for (net.minecraft.server.level.ServerPlayer player : event.getPlayerList().getPlayers()) {
+                net.pocketodds.shop.ShopService.syncShopToPlayer(player,
+                        net.pocketodds.data.JackpotSavedData.get(player.serverLevel()));
+            }
+        }
+    }
+
+    private void onRegisterCommands(net.minecraftforge.event.RegisterCommandsEvent event) {
+        net.pocketodds.command.ShopCatalogGeneratorCommand.register(event.getDispatcher());
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {

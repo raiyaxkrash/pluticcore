@@ -1,14 +1,14 @@
 ﻿{
-  "offerId": "mek_ultimate_circuit",
-  "itemId": "mekanism:ultimate_control_circuit",
-  "count": 1,
-  "price": 35,
-  "category": "RARE",
-  "purchaseLimit": 2,
-  "limitPeriod": "WEEKLY",
-  "requiredAdvancement": "",
-  "enabled": true,
-  "sortOrder": 50,
-  "nameKey": "shop.pocketodds.mek_ultimate_circuit",
-  "descriptionKey": "shop.pocketodds.mek_ultimate_circuit.desc"
+    "offerId":  "mek_ultimate_circuit",
+    "itemId":  "mekanism:ultimate_control_circuit",
+    "count":  1,
+    "priceCredits":  4096,
+    "category":  "RARE",
+    "purchaseLimit":  2,
+    "limitPeriod":  "WEEKLY",
+    "requiredAdvancement":  "",
+    "enabled":  true,
+    "sortOrder":  50,
+    "nameKey":  "shop.pocketodds.mek_ultimate_circuit",
+    "descriptionKey":  "shop.pocketodds.mek_ultimate_circuit.desc"
 }

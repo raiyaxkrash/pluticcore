@@ -1,14 +1,14 @@
 ﻿{
-  "offerId": "flux_point",
-  "itemId": "fluxnetworks:flux_point",
-  "count": 1,
-  "price": 20,
-  "category": "TRAVEL",
-  "purchaseLimit": 4,
-  "limitPeriod": "WEEKLY",
-  "requiredAdvancement": "",
-  "enabled": true,
-  "sortOrder": 90,
-  "nameKey": "shop.pocketodds.flux_point",
-  "descriptionKey": "shop.pocketodds.flux_point.desc"
+    "offerId":  "flux_point",
+    "itemId":  "fluxnetworks:flux_point",
+    "count":  1,
+    "priceCredits":  4096,
+    "category":  "TRAVEL",
+    "purchaseLimit":  4,
+    "limitPeriod":  "WEEKLY",
+    "requiredAdvancement":  "",
+    "enabled":  true,
+    "sortOrder":  90,
+    "nameKey":  "shop.pocketodds.flux_point",
+    "descriptionKey":  "shop.pocketodds.flux_point.desc"
 }

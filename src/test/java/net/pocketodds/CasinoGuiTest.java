@@ -61,7 +61,6 @@ public class CasinoGuiTest {
             registerItemIfMissing(forgeReg, "jackpot_token", new net.pocketodds.item.JackpotTokenItem(new net.minecraft.world.item.Item.Properties()));
             registerItemIfMissing(forgeReg, "joker", new net.minecraft.world.item.Item(new net.minecraft.world.item.Item.Properties()));
             registerItemIfMissing(forgeReg, "insurance", new net.minecraft.world.item.Item(new net.minecraft.world.item.Item.Properties()));
-            forgeReg.freeze();
         }
 
         // Configure test item betting entry

@@ -1,0 +1,16 @@
+{
+    "offerId": "create_creative_motor",
+    "item": "create:creative_motor",
+    "count": 1,
+    "priceCredits": 262144,
+    "category": "CREATIVE",
+    "purchaseLimit": 1,
+    "limitPeriod": "PER_PLAYER",
+    "requiredAdvancement": "allthemods:allthemodium/atm_star",
+    "requiredMods": ["create"],
+    "requiredItems": ["create:creative_motor"],
+    "enabled": true,
+    "sortOrder": 200,
+    "nameKey": "shop.pocketodds.create_creative_motor",
+    "descriptionKey": "shop.pocketodds.create_creative_motor.desc"
+}

@@ -33,7 +33,6 @@ public class ModCreativeTabs {
                         output.accept(ModItems.INSURANCE.get());
                         output.accept(ModItems.CURSED_CARD.get());
                         output.accept(ModItems.JACKPOT_TOKEN.get());
-                        output.accept(ModItems.PRIZE_TOKEN.get());
                     })
                     .build());
 

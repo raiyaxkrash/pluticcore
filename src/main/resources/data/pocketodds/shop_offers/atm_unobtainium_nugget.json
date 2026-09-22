@@ -1,0 +1,16 @@
+{
+    "offerId": "atm_unobtainium_nugget",
+    "item": "allthemodium:unobtainium_nugget",
+    "count": 1,
+    "priceCredits": 16384,
+    "category": "RARE",
+    "purchaseLimit": 8,
+    "limitPeriod": "WEEKLY",
+    "requiredAdvancement": "allthemods:allthemodium/unobtainium",
+    "requiredMods": ["allthemodium"],
+    "requiredItems": ["allthemodium:unobtainium_nugget"],
+    "enabled": true,
+    "sortOrder": 91,
+    "nameKey": "shop.pocketodds.atm_unobtainium_nugget",
+    "descriptionKey": "shop.pocketodds.atm_unobtainium_nugget.desc"
+}

@@ -5,6 +5,7 @@ import java.util.Locale;
 public enum ShopLimitPeriod {
     DAILY,
     WEEKLY,
+    PER_PLAYER,
     PERMANENT,
     UNLIMITED;
 
@@ -12,8 +13,12 @@ public enum ShopLimitPeriod {
         if (name == null || name.trim().isEmpty()) {
             return UNLIMITED;
         }
+        String clean = name.trim().toUpperCase(Locale.ROOT);
+        if ("PERMANENT".equals(clean)) {
+            return PER_PLAYER;
+        }
         try {
-            return ShopLimitPeriod.valueOf(name.trim().toUpperCase(Locale.ROOT));
+            return ShopLimitPeriod.valueOf(clean);
         } catch (IllegalArgumentException e) {
             return UNLIMITED;
         }

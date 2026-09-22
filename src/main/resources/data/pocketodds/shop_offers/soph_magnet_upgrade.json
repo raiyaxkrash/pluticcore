@@ -1,14 +1,14 @@
 ﻿{
-  "offerId": "soph_magnet_upgrade",
-  "itemId": "sophisticatedbackpacks:magnet_upgrade",
-  "count": 1,
-  "price": 25,
-  "category": "STORAGE",
-  "purchaseLimit": 2,
-  "limitPeriod": "WEEKLY",
-  "requiredAdvancement": "",
-  "enabled": true,
-  "sortOrder": 130,
-  "nameKey": "shop.pocketodds.soph_magnet_upgrade",
-  "descriptionKey": "shop.pocketodds.soph_magnet_upgrade.desc"
+    "offerId":  "soph_magnet_upgrade",
+    "itemId":  "sophisticatedbackpacks:magnet_upgrade",
+    "count":  1,
+    "priceCredits":  8192,
+    "category":  "STORAGE",
+    "purchaseLimit":  2,
+    "limitPeriod":  "WEEKLY",
+    "requiredAdvancement":  "",
+    "enabled":  true,
+    "sortOrder":  130,
+    "nameKey":  "shop.pocketodds.soph_magnet_upgrade",
+    "descriptionKey":  "shop.pocketodds.soph_magnet_upgrade.desc"
 }

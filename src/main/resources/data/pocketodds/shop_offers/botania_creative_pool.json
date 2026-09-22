@@ -1,0 +1,16 @@
+{
+    "offerId": "botania_creative_pool",
+    "item": "botania:creative_pool",
+    "count": 1,
+    "priceCredits": 524288,
+    "category": "CREATIVE",
+    "purchaseLimit": 1,
+    "limitPeriod": "PER_PLAYER",
+    "requiredAdvancement": "allthemods:allthemodium/atm_star",
+    "requiredMods": ["botania"],
+    "requiredItems": ["botania:creative_pool"],
+    "enabled": true,
+    "sortOrder": 202,
+    "nameKey": "shop.pocketodds.botania_creative_pool",
+    "descriptionKey": "shop.pocketodds.botania_creative_pool.desc"
+}

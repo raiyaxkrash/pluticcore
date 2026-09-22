@@ -1,0 +1,16 @@
+{
+    "offerId": "atm_vibranium_ingot",
+    "item": "allthemodium:vibranium_ingot",
+    "count": 1,
+    "priceCredits": 32768,
+    "category": "RARE",
+    "purchaseLimit": 4,
+    "limitPeriod": "WEEKLY",
+    "requiredAdvancement": "allthemods:allthemodium/vibranium",
+    "requiredMods": ["allthemodium"],
+    "requiredItems": ["allthemodium:vibranium_ingot"],
+    "enabled": true,
+    "sortOrder": 90,
+    "nameKey": "shop.pocketodds.atm_vibranium_ingot",
+    "descriptionKey": "shop.pocketodds.atm_vibranium_ingot.desc"
+}

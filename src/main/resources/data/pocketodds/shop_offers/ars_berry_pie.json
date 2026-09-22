@@ -1,14 +1,14 @@
 ﻿{
-  "offerId": "ars_berry_pie",
-  "itemId": "ars_nouveau:source_berry_pie",
-  "count": 8,
-  "price": 10,
-  "category": "CONSUMABLES",
-  "purchaseLimit": 8,
-  "limitPeriod": "DAILY",
-  "requiredAdvancement": "",
-  "enabled": true,
-  "sortOrder": 220,
-  "nameKey": "shop.pocketodds.ars_berry_pie",
-  "descriptionKey": "shop.pocketodds.ars_berry_pie.desc"
+    "offerId":  "ars_berry_pie",
+    "itemId":  "ars_nouveau:source_berry_pie",
+    "count":  8,
+    "priceCredits":  64,
+    "category":  "CONSUMABLES",
+    "purchaseLimit":  8,
+    "limitPeriod":  "DAILY",
+    "requiredAdvancement":  "",
+    "enabled":  true,
+    "sortOrder":  220,
+    "nameKey":  "shop.pocketodds.ars_berry_pie",
+    "descriptionKey":  "shop.pocketodds.ars_berry_pie.desc"
 }

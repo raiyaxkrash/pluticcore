@@ -1,14 +1,14 @@
 ﻿{
-  "offerId": "mek_advanced_circuit",
-  "itemId": "mekanism:advanced_control_circuit",
-  "count": 1,
-  "price": 12,
-  "category": "COMPONENTS",
-  "purchaseLimit": 4,
-  "limitPeriod": "WEEKLY",
-  "requiredAdvancement": "",
-  "enabled": true,
-  "sortOrder": 20,
-  "nameKey": "shop.pocketodds.mek_advanced_circuit",
-  "descriptionKey": "shop.pocketodds.mek_advanced_circuit.desc"
+    "offerId":  "mek_advanced_circuit",
+    "itemId":  "mekanism:advanced_control_circuit",
+    "count":  1,
+    "priceCredits":  1024,
+    "category":  "COMPONENTS",
+    "purchaseLimit":  4,
+    "limitPeriod":  "WEEKLY",
+    "requiredAdvancement":  "",
+    "enabled":  true,
+    "sortOrder":  20,
+    "nameKey":  "shop.pocketodds.mek_advanced_circuit",
+    "descriptionKey":  "shop.pocketodds.mek_advanced_circuit.desc"
 }

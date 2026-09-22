@@ -1,0 +1,16 @@
+{
+    "offerId": "mek_creative_energy_cube",
+    "item": "mekanism:creative_energy_cube",
+    "count": 1,
+    "priceCredits": 1048576,
+    "category": "CREATIVE",
+    "purchaseLimit": 1,
+    "limitPeriod": "PER_PLAYER",
+    "requiredAdvancement": "allthemods:allthemodium/atm_star",
+    "requiredMods": ["mekanism"],
+    "requiredItems": ["mekanism:creative_energy_cube"],
+    "enabled": true,
+    "sortOrder": 208,
+    "nameKey": "shop.pocketodds.mek_creative_energy_cube",
+    "descriptionKey": "shop.pocketodds.mek_creative_energy_cube.desc"
+}

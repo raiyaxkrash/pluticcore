@@ -1,14 +1,14 @@
 ﻿{
-  "offerId": "botania_overgrowth_seed",
-  "itemId": "botania:overgrowth_seed",
-  "count": 1,
-  "price": 30,
-  "category": "RARE",
-  "purchaseLimit": 2,
-  "limitPeriod": "WEEKLY",
-  "requiredAdvancement": "",
-  "enabled": true,
-  "sortOrder": 200,
-  "nameKey": "shop.pocketodds.botania_overgrowth_seed",
-  "descriptionKey": "shop.pocketodds.botania_overgrowth_seed.desc"
+    "offerId":  "botania_overgrowth_seed",
+    "itemId":  "botania:overgrowth_seed",
+    "count":  1,
+    "priceCredits":  8192,
+    "category":  "RARE",
+    "purchaseLimit":  2,
+    "limitPeriod":  "WEEKLY",
+    "requiredAdvancement":  "",
+    "enabled":  true,
+    "sortOrder":  200,
+    "nameKey":  "shop.pocketodds.botania_overgrowth_seed",
+    "descriptionKey":  "shop.pocketodds.botania_overgrowth_seed.desc"
 }

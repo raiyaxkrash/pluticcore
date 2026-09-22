@@ -11,7 +11,8 @@ public enum ShopCategory {
     TRAVEL,
     BUILDING,
     RARE,
-    CONSUMABLES;
+    CONSUMABLES,
+    CREATIVE;
 
     public static ShopCategory fromString(String name) {
         if (name == null || name.trim().isEmpty()) {

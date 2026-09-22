@@ -1,14 +1,14 @@
 ﻿{
-  "offerId": "botania_livingwood",
-  "itemId": "botania:livingwood_log",
-  "count": 16,
-  "price": 10,
-  "category": "BUILDING",
-  "purchaseLimit": 16,
-  "limitPeriod": "DAILY",
-  "requiredAdvancement": "",
-  "enabled": true,
-  "sortOrder": 210,
-  "nameKey": "shop.pocketodds.botania_livingwood",
-  "descriptionKey": "shop.pocketodds.botania_livingwood.desc"
+    "offerId":  "botania_livingwood",
+    "itemId":  "botania:livingwood_log",
+    "count":  16,
+    "priceCredits":  128,
+    "category":  "BUILDING",
+    "purchaseLimit":  16,
+    "limitPeriod":  "DAILY",
+    "requiredAdvancement":  "",
+    "enabled":  true,
+    "sortOrder":  210,
+    "nameKey":  "shop.pocketodds.botania_livingwood",
+    "descriptionKey":  "shop.pocketodds.botania_livingwood.desc"
 }

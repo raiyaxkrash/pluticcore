@@ -24,37 +24,32 @@ public class ShopOfferRegistry extends SimpleJsonResourceReloadListener {
         super(GSON, "shop_offers");
     }
 
+    public void applyResources(Map<ResourceLocation, JsonElement> resources) {
+        apply(resources, null, null);
+    }
+
     @Override
     protected void apply(Map<ResourceLocation, JsonElement> resources, ResourceManager resourceManager, ProfilerFiller profiler) {
         Map<String, ShopOffer> newOffers = new LinkedHashMap<>();
         for (Map.Entry<ResourceLocation, JsonElement> entry : resources.entrySet()) {
             ResourceLocation fileId = entry.getKey();
             try {
-                if (!entry.getValue().isJsonObject()) continue;
+                if (entry.getValue() == null || !entry.getValue().isJsonObject()) {
+                    PocketOdds.LOGGER.warn("Pocket Odds: Skipping non-object shop offer JSON {}", fileId);
+                    continue;
+                }
                 JsonObject json = entry.getValue().getAsJsonObject();
-
-                String offerId = json.has("offerId") ? json.get("offerId").getAsString() : fileId.getPath();
-                String itemId = json.has("itemId") ? json.get("itemId").getAsString() : "minecraft:air";
-                int count = json.has("count") ? json.get("count").getAsInt() : 1;
-                int price = json.has("price") ? json.get("price").getAsInt() : 1;
-                String categoryStr = json.has("category") ? json.get("category").getAsString() : "RESOURCES";
-                int purchaseLimit = json.has("purchaseLimit") ? json.get("purchaseLimit").getAsInt() : 0;
-                String limitPeriodStr = json.has("limitPeriod") ? json.get("limitPeriod").getAsString() : "UNLIMITED";
-                String requiredAdvancement = json.has("requiredAdvancement") ? json.get("requiredAdvancement").getAsString() : "";
-                boolean enabled = !json.has("enabled") || json.get("enabled").getAsBoolean();
-                int sortOrder = json.has("sortOrder") ? json.get("sortOrder").getAsInt() : 100;
-                String nameKey = json.has("nameKey") ? json.get("nameKey").getAsString() : "shop.pocketodds." + offerId;
-                String descriptionKey = json.has("descriptionKey") ? json.get("descriptionKey").getAsString() : nameKey + ".desc";
-
-                ShopCategory category = ShopCategory.fromString(categoryStr);
-                ShopLimitPeriod limitPeriod = ShopLimitPeriod.fromString(limitPeriodStr);
-
-                ShopOffer offer = new ShopOffer(
-                        offerId, itemId, count, price, category, purchaseLimit, limitPeriod,
-                        requiredAdvancement, enabled, sortOrder, nameKey, descriptionKey
-                );
-
-                newOffers.put(offerId, offer);
+                if (!json.has("offerId")) {
+                    json.addProperty("offerId", fileId.getPath());
+                }
+                ShopOffer offer = ShopOffer.fromJson(json);
+                if (offer != null) {
+                    if (newOffers.containsKey(offer.getOfferId())) {
+                        PocketOdds.LOGGER.warn("Pocket Odds: Duplicate shop offerId '{}' found in '{}'. Replacing previous entry.",
+                                offer.getOfferId(), fileId);
+                    }
+                    newOffers.put(offer.getOfferId(), offer);
+                }
             } catch (Exception e) {
                 PocketOdds.LOGGER.error("Pocket Odds: Failed to parse shop offer JSON {}: {}", fileId, e.getMessage());
             }
@@ -68,7 +63,7 @@ public class ShopOfferRegistry extends SimpleJsonResourceReloadListener {
         // Validate items and log once
         for (ShopOffer offer : newOffers.values()) {
             if (!offer.isItemAvailable() && WARNED_MISSING_ITEMS.add(offer.getItemId())) {
-                PocketOdds.LOGGER.warn("Pocket Odds: Shop offer '{}' refers to item '{}' which is not present in registry. Offer disabled.",
+                PocketOdds.LOGGER.warn("Pocket Odds: Shop offer '{}' refers to item '{}' or required mod which is not present in registry. Offer disabled.",
                         offer.getOfferId(), offer.getItemId());
             }
         }

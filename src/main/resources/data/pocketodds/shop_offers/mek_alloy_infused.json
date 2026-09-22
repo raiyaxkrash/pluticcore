@@ -1,14 +1,14 @@
 ﻿{
-  "offerId": "mek_alloy_infused",
-  "itemId": "mekanism:alloy_infused",
-  "count": 4,
-  "price": 8,
-  "category": "COMPONENTS",
-  "purchaseLimit": 8,
-  "limitPeriod": "WEEKLY",
-  "requiredAdvancement": "",
-  "enabled": true,
-  "sortOrder": 30,
-  "nameKey": "shop.pocketodds.mek_alloy_infused",
-  "descriptionKey": "shop.pocketodds.mek_alloy_infused.desc"
+    "offerId":  "mek_alloy_infused",
+    "itemId":  "mekanism:alloy_infused",
+    "count":  4,
+    "priceCredits":  512,
+    "category":  "COMPONENTS",
+    "purchaseLimit":  8,
+    "limitPeriod":  "WEEKLY",
+    "requiredAdvancement":  "",
+    "enabled":  true,
+    "sortOrder":  30,
+    "nameKey":  "shop.pocketodds.mek_alloy_infused",
+    "descriptionKey":  "shop.pocketodds.mek_alloy_infused.desc"
 }

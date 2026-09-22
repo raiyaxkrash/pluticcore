@@ -1,0 +1,16 @@
+{
+    "offerId": "ae2_creative_energy_cell",
+    "item": "ae2:creative_energy_cell",
+    "count": 1,
+    "priceCredits": 1048576,
+    "category": "CREATIVE",
+    "purchaseLimit": 1,
+    "limitPeriod": "PER_PLAYER",
+    "requiredAdvancement": "allthemods:allthemodium/atm_star",
+    "requiredMods": ["ae2"],
+    "requiredItems": ["ae2:creative_energy_cell"],
+    "enabled": true,
+    "sortOrder": 207,
+    "nameKey": "shop.pocketodds.ae2_creative_energy_cell",
+    "descriptionKey": "shop.pocketodds.ae2_creative_energy_cell.desc"
+}

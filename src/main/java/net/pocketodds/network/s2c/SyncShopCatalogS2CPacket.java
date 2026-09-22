@@ -17,36 +17,39 @@ public class SyncShopCatalogS2CPacket {
     public static class ClientShopEntry {
         private final String offerId;
         private final ItemStack rewardStack;
-        private final int price;
+        private final long priceCredits;
         private final int categoryOrdinal;
         private final int limitPeriodOrdinal;
         private final int remainingLimit;
         private final boolean available;
+        private final boolean advancementSatisfied;
         private final String nameKey;
         private final String descriptionKey;
 
-        public ClientShopEntry(String offerId, ItemStack rewardStack, int price, int categoryOrdinal,
+        public ClientShopEntry(String offerId, ItemStack rewardStack, long priceCredits, int categoryOrdinal,
                                int limitPeriodOrdinal, int remainingLimit, boolean available,
-                               String nameKey, String descriptionKey) {
-            this.offerId = offerId;
-            this.rewardStack = rewardStack;
-            this.price = price;
+                               boolean advancementSatisfied, String nameKey, String descriptionKey) {
+            this.offerId = offerId != null ? offerId : "";
+            this.rewardStack = rewardStack != null ? rewardStack : ItemStack.EMPTY;
+            this.priceCredits = priceCredits;
             this.categoryOrdinal = categoryOrdinal;
             this.limitPeriodOrdinal = limitPeriodOrdinal;
             this.remainingLimit = remainingLimit;
             this.available = available;
-            this.nameKey = nameKey;
-            this.descriptionKey = descriptionKey;
+            this.advancementSatisfied = advancementSatisfied;
+            this.nameKey = nameKey != null ? nameKey : "";
+            this.descriptionKey = descriptionKey != null ? descriptionKey : "";
         }
 
         public ClientShopEntry(FriendlyByteBuf buf) {
             this.offerId = buf.readUtf(128);
             this.rewardStack = buf.readItem();
-            this.price = buf.readVarInt();
+            this.priceCredits = buf.readLong();
             this.categoryOrdinal = buf.readVarInt();
             this.limitPeriodOrdinal = buf.readVarInt();
             this.remainingLimit = buf.readVarInt();
             this.available = buf.readBoolean();
+            this.advancementSatisfied = buf.readBoolean();
             this.nameKey = buf.readUtf(128);
             this.descriptionKey = buf.readUtf(128);
         }
@@ -54,36 +57,39 @@ public class SyncShopCatalogS2CPacket {
         public void toBytes(FriendlyByteBuf buf) {
             buf.writeUtf(offerId, 128);
             buf.writeItem(rewardStack);
-            buf.writeVarInt(price);
+            buf.writeLong(priceCredits);
             buf.writeVarInt(categoryOrdinal);
             buf.writeVarInt(limitPeriodOrdinal);
             buf.writeVarInt(remainingLimit);
             buf.writeBoolean(available);
+            buf.writeBoolean(advancementSatisfied);
             buf.writeUtf(nameKey, 128);
             buf.writeUtf(descriptionKey, 128);
         }
 
         public String getOfferId() { return offerId; }
         public ItemStack getRewardStack() { return rewardStack; }
-        public int getPrice() { return price; }
+        public long getPriceCredits() { return priceCredits; }
+        public int getPrice() { return (int) Math.min(Integer.MAX_VALUE, priceCredits); }
         public int getCategoryOrdinal() { return categoryOrdinal; }
         public int getLimitPeriodOrdinal() { return limitPeriodOrdinal; }
         public int getRemainingLimit() { return remainingLimit; }
         public boolean isAvailable() { return available; }
+        public boolean isAdvancementSatisfied() { return advancementSatisfied; }
         public String getNameKey() { return nameKey; }
         public String getDescriptionKey() { return descriptionKey; }
     }
 
-    private final int playerTokens;
+    private final long pouchCredits;
     private final List<ClientShopEntry> entries;
 
-    public SyncShopCatalogS2CPacket(int playerTokens, List<ClientShopEntry> entries) {
-        this.playerTokens = playerTokens;
+    public SyncShopCatalogS2CPacket(long pouchCredits, List<ClientShopEntry> entries) {
+        this.pouchCredits = pouchCredits;
         this.entries = entries != null ? entries : new ArrayList<>();
     }
 
     public SyncShopCatalogS2CPacket(FriendlyByteBuf buf) {
-        this.playerTokens = buf.readVarInt();
+        this.pouchCredits = buf.readLong();
         int size = buf.readVarInt();
         this.entries = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
@@ -92,15 +98,15 @@ public class SyncShopCatalogS2CPacket {
     }
 
     public void toBytes(FriendlyByteBuf buf) {
-        buf.writeVarInt(playerTokens);
+        buf.writeLong(pouchCredits);
         buf.writeVarInt(entries.size());
         for (ClientShopEntry entry : entries) {
             entry.toBytes(buf);
         }
     }
 
-    public int getPlayerTokens() {
-        return playerTokens;
+    public long getPouchCredits() {
+        return pouchCredits;
     }
 
     public List<ClientShopEntry> getEntries() {
@@ -111,7 +117,7 @@ public class SyncShopCatalogS2CPacket {
         ctx.get().enqueueWork(() -> {
             DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
                 if (Minecraft.getInstance().screen instanceof PocketCasinoScreen screen) {
-                    screen.updateShopCatalog(msg.playerTokens, msg.entries);
+                    screen.updateShopCatalog(msg.pouchCredits, msg.entries);
                 }
             });
         });

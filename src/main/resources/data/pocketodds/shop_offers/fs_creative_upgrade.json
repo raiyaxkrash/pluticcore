@@ -1,0 +1,16 @@
+{
+    "offerId": "fs_creative_upgrade",
+    "item": "functionalstorage:creative_vending_upgrade",
+    "count": 1,
+    "priceCredits": 262144,
+    "category": "CREATIVE",
+    "purchaseLimit": 1,
+    "limitPeriod": "PER_PLAYER",
+    "requiredAdvancement": "allthemods:allthemodium/atm_star",
+    "requiredMods": ["functionalstorage"],
+    "requiredItems": ["functionalstorage:creative_vending_upgrade"],
+    "enabled": true,
+    "sortOrder": 201,
+    "nameKey": "shop.pocketodds.fs_creative_upgrade",
+    "descriptionKey": "shop.pocketodds.fs_creative_upgrade.desc"
+}

@@ -1,14 +1,14 @@
 ﻿{
-  "offerId": "ato_aluminum_ingot",
-  "itemId": "alltheores:aluminum_ingot",
-  "count": 16,
-  "price": 8,
-  "category": "RESOURCES",
-  "purchaseLimit": 16,
-  "limitPeriod": "DAILY",
-  "requiredAdvancement": "",
-  "enabled": true,
-  "sortOrder": 140,
-  "nameKey": "shop.pocketodds.ato_aluminum_ingot",
-  "descriptionKey": "shop.pocketodds.ato_aluminum_ingot.desc"
+    "offerId":  "ato_aluminum_ingot",
+    "itemId":  "alltheores:aluminum_ingot",
+    "count":  16,
+    "priceCredits":  128,
+    "category":  "RESOURCES",
+    "purchaseLimit":  16,
+    "limitPeriod":  "DAILY",
+    "requiredAdvancement":  "",
+    "enabled":  true,
+    "sortOrder":  140,
+    "nameKey":  "shop.pocketodds.ato_aluminum_ingot",
+    "descriptionKey":  "shop.pocketodds.ato_aluminum_ingot.desc"
 }

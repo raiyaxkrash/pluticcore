@@ -11,16 +11,20 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
+/**
+ * Legacy token preserved solely to prevent world loading crashes and missing registry mapping errors
+ * for existing worlds and items. It is no longer used in the shop or anywhere in the mod economy.
+ */
+@Deprecated(forRemoval = true, since = "1.1.0")
 public class PrizeTokenItem extends Item {
 
     public PrizeTokenItem(Properties properties) {
-        super(properties.stacksTo(64).rarity(Rarity.RARE));
+        super(properties.stacksTo(64).rarity(Rarity.COMMON));
     }
 
     @Override
     public void appendHoverText(ItemStack stack, @Nullable Level level, List<Component> tooltipComponents, TooltipFlag isAdvanced) {
-        tooltipComponents.add(Component.translatable("item.pocketodds.prize_token.tooltip").withStyle(ChatFormatting.GRAY));
-        tooltipComponents.add(Component.translatable("item.pocketodds.prize_token.hint").withStyle(ChatFormatting.DARK_PURPLE, ChatFormatting.ITALIC));
+        tooltipComponents.add(Component.translatable("item.pocketodds.prize_token.obsolete").withStyle(ChatFormatting.RED, ChatFormatting.ITALIC));
         super.appendHoverText(stack, level, tooltipComponents, isAdvanced);
     }
 }

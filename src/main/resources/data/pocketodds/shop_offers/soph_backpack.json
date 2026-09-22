@@ -1,14 +1,14 @@
 ﻿{
-  "offerId": "soph_backpack",
-  "itemId": "sophisticatedbackpacks:backpack",
-  "count": 1,
-  "price": 15,
-  "category": "STORAGE",
-  "purchaseLimit": 2,
-  "limitPeriod": "PERMANENT",
-  "requiredAdvancement": "",
-  "enabled": true,
-  "sortOrder": 120,
-  "nameKey": "shop.pocketodds.soph_backpack",
-  "descriptionKey": "shop.pocketodds.soph_backpack.desc"
+    "offerId":  "soph_backpack",
+    "itemId":  "sophisticatedbackpacks:backpack",
+    "count":  1,
+    "priceCredits":  4096,
+    "category":  "STORAGE",
+    "purchaseLimit":  2,
+    "limitPeriod":  "PERMANENT",
+    "requiredAdvancement":  "",
+    "enabled":  true,
+    "sortOrder":  120,
+    "nameKey":  "shop.pocketodds.soph_backpack",
+    "descriptionKey":  "shop.pocketodds.soph_backpack.desc"
 }

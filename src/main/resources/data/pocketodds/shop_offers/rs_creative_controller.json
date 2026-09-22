@@ -1,0 +1,16 @@
+{
+    "offerId": "rs_creative_controller",
+    "item": "refinedstorage:creative_controller",
+    "count": 1,
+    "priceCredits": 1048576,
+    "category": "CREATIVE",
+    "purchaseLimit": 1,
+    "limitPeriod": "PER_PLAYER",
+    "requiredAdvancement": "allthemods:allthemodium/atm_star",
+    "requiredMods": ["refinedstorage"],
+    "requiredItems": ["refinedstorage:creative_controller"],
+    "enabled": true,
+    "sortOrder": 206,
+    "nameKey": "shop.pocketodds.rs_creative_controller",
+    "descriptionKey": "shop.pocketodds.rs_creative_controller.desc"
+}

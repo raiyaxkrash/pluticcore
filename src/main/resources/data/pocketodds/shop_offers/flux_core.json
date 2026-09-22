@@ -1,14 +1,14 @@
 ﻿{
-  "offerId": "flux_core",
-  "itemId": "fluxnetworks:flux_core",
-  "count": 2,
-  "price": 10,
-  "category": "COMPONENTS",
-  "purchaseLimit": 6,
-  "limitPeriod": "WEEKLY",
-  "requiredAdvancement": "",
-  "enabled": true,
-  "sortOrder": 60,
-  "nameKey": "shop.pocketodds.flux_core",
-  "descriptionKey": "shop.pocketodds.flux_core.desc"
+    "offerId":  "flux_core",
+    "itemId":  "fluxnetworks:flux_core",
+    "count":  2,
+    "priceCredits":  1024,
+    "category":  "COMPONENTS",
+    "purchaseLimit":  6,
+    "limitPeriod":  "WEEKLY",
+    "requiredAdvancement":  "",
+    "enabled":  true,
+    "sortOrder":  60,
+    "nameKey":  "shop.pocketodds.flux_core",
+    "descriptionKey":  "shop.pocketodds.flux_core.desc"
 }

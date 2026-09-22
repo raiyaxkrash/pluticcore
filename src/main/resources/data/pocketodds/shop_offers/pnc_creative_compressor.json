@@ -1,0 +1,16 @@
+{
+    "offerId": "pnc_creative_compressor",
+    "item": "pneumaticcraft:creative_compressor",
+    "count": 1,
+    "priceCredits": 524288,
+    "category": "CREATIVE",
+    "purchaseLimit": 1,
+    "limitPeriod": "PER_PLAYER",
+    "requiredAdvancement": "allthemods:allthemodium/atm_star",
+    "requiredMods": ["pneumaticcraft"],
+    "requiredItems": ["pneumaticcraft:creative_compressor"],
+    "enabled": true,
+    "sortOrder": 205,
+    "nameKey": "shop.pocketodds.pnc_creative_compressor",
+    "descriptionKey": "shop.pocketodds.pnc_creative_compressor.desc"
+}

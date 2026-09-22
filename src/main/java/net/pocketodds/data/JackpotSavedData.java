@@ -587,22 +587,7 @@ public class JackpotSavedData extends SavedData {
                 }
             }
         }
-        for (ShopPurchaseTransaction tx : data.shopPurchases.values()) {
-            if (tx.getState() == ShopPurchaseTransaction.State.PREPARED) {
-                // Not debited before restart -> discard
-                tx.setState(ShopPurchaseTransaction.State.REFUND_QUEUED);
-            } else if (tx.getState() == ShopPurchaseTransaction.State.TOKENS_DEBITED) {
-                // Tokens were debited, ensure reward is queued in outbox
-                UUID rewardTxId = UUID.nameUUIDFromBytes(("shop_reward_" + tx.getOperationId().toString()).getBytes(StandardCharsets.UTF_8));
-                if (data.getTransaction(rewardTxId) == null) {
-                    RewardTransaction rewardTx = new RewardTransaction(rewardTxId, tx.getPlayerUUID(), Collections.singletonList(tx.getRewardStack()));
-                    data.pendingTransactions.add(rewardTx);
-                }
-                tx.setState(ShopPurchaseTransaction.State.COMMITTED);
-            }
-        }
-
-        // Load player shop limits
+        // Load player shop limits before recovering transactions so limit increments are not overwritten
         if (tag.contains("PlayerShopLimits", Tag.TAG_COMPOUND)) {
             CompoundTag limitsTag = tag.getCompound("PlayerShopLimits");
             for (String pKey : limitsTag.getAllKeys()) {
@@ -618,7 +603,61 @@ public class JackpotSavedData extends SavedData {
             }
         }
 
+        // Recover shop purchases
+        for (ShopPurchaseTransaction tx : data.shopPurchases.values()) {
+            if (tx.getState() == ShopPurchaseTransaction.State.PREPARED) {
+                // Clean PREPARED without actual debits is cancelled without refund
+                if (!tx.hasActualDebits()) {
+                    tx.setState(ShopPurchaseTransaction.State.CANCELLED);
+                    LOGGER.info("Pocket Odds Crash Recovery: Clean PREPARED shop purchase {} cancelled without refund.", tx.getOperationId());
+                } else {
+                    queueShopRefund(data, tx);
+                    tx.setState(ShopPurchaseTransaction.State.REFUND_QUEUED);
+                }
+            } else if (tx.getState() == ShopPurchaseTransaction.State.REFUND_QUEUED) {
+                // Recover previously saved REFUND_QUEUED state to ensure outbox contains the refund
+                if (tx.hasActualDebits()) {
+                    queueShopRefund(data, tx);
+                } else {
+                    tx.setState(ShopPurchaseTransaction.State.CANCELLED);
+                }
+            } else if (tx.getState() == ShopPurchaseTransaction.State.PAYMENT_DEBITED
+                    || tx.getState() == ShopPurchaseTransaction.State.REWARD_QUEUED) {
+                // Payment was debited before crash: restore reward and change into outbox
+                UUID rewardTxId = UUID.nameUUIDFromBytes(("shop_reward:" + tx.getOperationId()).getBytes(StandardCharsets.UTF_8));
+                if (data.getTransaction(rewardTxId) == null && !data.isReceiptCompleted(rewardTxId) && !tx.getRewardStack().isEmpty()) {
+                    RewardTransaction rewardTx = new RewardTransaction(rewardTxId, tx.getPlayerUUID(), Collections.singletonList(tx.getRewardStack()));
+                    data.pendingTransactions.add(rewardTx);
+                }
+                if (tx.getChangeCredits() > 0 && !tx.getChangeStacks().isEmpty()) {
+                    UUID changeTxId = UUID.nameUUIDFromBytes(("shop_change:" + tx.getOperationId()).getBytes(StandardCharsets.UTF_8));
+                    if (data.getTransaction(changeTxId) == null && !data.isReceiptCompleted(changeTxId)) {
+                        RewardTransaction changeTx = new RewardTransaction(changeTxId, tx.getPlayerUUID(), tx.getChangeStacks());
+                        data.pendingTransactions.add(changeTx);
+                    }
+                }
+                if (!tx.isLimitRecorded()) {
+                    data.incrementPlayerPurchaseCount(tx.getPlayerUUID(), tx.getOfferId(), tx.getLimitPeriod());
+                    tx.setLimitRecorded(true);
+                }
+                tx.setState(ShopPurchaseTransaction.State.COMMITTED);
+            }
+        }
+
         return data;
+    }
+
+    private static void queueShopRefund(JackpotSavedData data, ShopPurchaseTransaction tx) {
+        UUID refundTxId = UUID.nameUUIDFromBytes(("shop_refund:" + tx.getOperationId()).getBytes(StandardCharsets.UTF_8));
+        if (data.getTransaction(refundTxId) == null && !data.isReceiptCompleted(refundTxId)) {
+            List<ItemStack> refundStacks = tx.createActualRefundStacks();
+            if (!refundStacks.isEmpty()) {
+                RewardTransaction refundTx = new RewardTransaction(refundTxId, tx.getPlayerUUID(), refundStacks);
+                data.pendingTransactions.add(refundTx);
+                LOGGER.warn("Pocket Odds Crash Recovery: Shop purchase {} had recorded actual debits. Queued refund {}.",
+                        tx.getOperationId(), refundTxId);
+            }
+        }
     }
 
     @Override
@@ -889,6 +928,36 @@ public class JackpotSavedData extends SavedData {
             pouchBalances.put(pouchUUID, balance.copy());
             setDirty();
         }
+    }
+
+    public synchronized boolean debitPouchChips(UUID pouchUUID, Map<ChipTier, Long> debits) {
+        if (pouchUUID == null || debits == null || debits.isEmpty()) return true;
+        PouchBalance internal = pouchBalances.get(pouchUUID);
+        if (internal == null) return false;
+        for (Map.Entry<ChipTier, Long> e : debits.entrySet()) {
+            if (e.getValue() > 0 && internal.getCount(e.getKey()) < e.getValue()) {
+                return false;
+            }
+        }
+        for (Map.Entry<ChipTier, Long> e : debits.entrySet()) {
+            if (e.getValue() > 0) {
+                internal.addCount(e.getKey(), -e.getValue());
+            }
+        }
+        setDirty();
+        return true;
+    }
+
+    public synchronized boolean creditPouchChips(UUID pouchUUID, Map<ChipTier, Long> credits) {
+        if (pouchUUID == null || credits == null || credits.isEmpty()) return true;
+        PouchBalance internal = pouchBalances.computeIfAbsent(pouchUUID, id -> new PouchBalance());
+        for (Map.Entry<ChipTier, Long> e : credits.entrySet()) {
+            if (e.getValue() > 0) {
+                internal.addCount(e.getKey(), e.getValue());
+            }
+        }
+        setDirty();
+        return true;
     }
 
     public synchronized PouchBalance depositToPouch(UUID pouchUUID, ChipTier tier, int count, ItemStack initialStack) {
@@ -1431,10 +1500,7 @@ public class JackpotSavedData extends SavedData {
 
     public synchronized boolean isShopOperationProcessed(UUID operationId) {
         if (operationId == null) return false;
-        ShopPurchaseTransaction tx = shopPurchases.get(operationId);
-        return tx != null && (tx.getState() == ShopPurchaseTransaction.State.COMMITTED
-                || tx.getState() == ShopPurchaseTransaction.State.TOKENS_DEBITED
-                || tx.getState() == ShopPurchaseTransaction.State.REWARD_QUEUED);
+        return shopPurchases.containsKey(operationId);
     }
 
     public synchronized void recordShopPurchase(ShopPurchaseTransaction tx) {

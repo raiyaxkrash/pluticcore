@@ -1,0 +1,16 @@
+{
+    "offerId": "powah_energy_cell_creative",
+    "item": "powah:energy_cell_creative",
+    "count": 1,
+    "priceCredits": 524288,
+    "category": "CREATIVE",
+    "purchaseLimit": 1,
+    "limitPeriod": "PER_PLAYER",
+    "requiredAdvancement": "allthemods:allthemodium/atm_star",
+    "requiredMods": ["powah"],
+    "requiredItems": ["powah:energy_cell_creative"],
+    "enabled": true,
+    "sortOrder": 204,
+    "nameKey": "shop.pocketodds.powah_energy_cell_creative",
+    "descriptionKey": "shop.pocketodds.powah_energy_cell_creative.desc"
+}
