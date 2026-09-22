@@ -19,6 +19,7 @@ import java.util.function.BiFunction;
 
 public class ShopOffer {
     public static final long MAX_PRICE_CREDITS = 1_000_000_000L;
+    public static final long MIN_CREATIVE_PRICE_CREDITS = 262_144L;
 
     private static BiFunction<String, Boolean, Boolean> modLoadedPredicate = null;
 
@@ -51,11 +52,27 @@ public class ShopOffer {
         if (priceCredits <= 0L || priceCredits > MAX_PRICE_CREDITS) {
             throw new IllegalArgumentException("Invalid priceCredits " + priceCredits + " for offer '" + offerId + "'. Must be between 1 and " + MAX_PRICE_CREDITS);
         }
+        ShopCategory cat = category != null ? category : ShopCategory.RESOURCES;
+        ShopLimitPeriod period = limitPeriod != null ? limitPeriod : ShopLimitPeriod.UNLIMITED;
+        String adv = requiredAdvancement != null ? requiredAdvancement : "";
+
+        if (cat == ShopCategory.CREATIVE) {
+            if (priceCredits < MIN_CREATIVE_PRICE_CREDITS) {
+                throw new IllegalArgumentException("Creative offer '" + offerId + "' price " + priceCredits + " is below minimum allowed " + MIN_CREATIVE_PRICE_CREDITS);
+            }
+            if (purchaseLimit != 1 || (period != ShopLimitPeriod.PER_PLAYER && period != ShopLimitPeriod.PERMANENT)) {
+                throw new IllegalArgumentException("Creative offer '" + offerId + "' must have purchaseLimit=1 and limitPeriod=PER_PLAYER");
+            }
+            if (adv.trim().isEmpty()) {
+                throw new IllegalArgumentException("Creative offer '" + offerId + "' must specify requiredAdvancement");
+            }
+        }
+
         this.priceCredits = priceCredits;
-        this.category = category != null ? category : ShopCategory.RESOURCES;
+        this.category = cat;
         this.purchaseLimit = Math.max(0, purchaseLimit);
-        this.limitPeriod = limitPeriod != null ? limitPeriod : ShopLimitPeriod.UNLIMITED;
-        this.requiredAdvancement = requiredAdvancement != null ? requiredAdvancement : "";
+        this.limitPeriod = period;
+        this.requiredAdvancement = adv;
         this.enabled = enabled;
         this.sortOrder = sortOrder;
         this.nameKey = nameKey != null ? nameKey : "";
@@ -315,6 +332,22 @@ public class ShopOffer {
 
         ShopCategory category = ShopCategory.fromString(categoryStr);
         ShopLimitPeriod limitPeriod = ShopLimitPeriod.fromString(limitPeriodStr);
+
+        if (category == ShopCategory.CREATIVE) {
+            if (priceCredits < MIN_CREATIVE_PRICE_CREDITS) {
+                PocketOdds.LOGGER.error("Pocket Odds: Creative shop offer '{}' rejected! Price {} is below minimum allowed {}.",
+                        offerId, priceCredits, MIN_CREATIVE_PRICE_CREDITS);
+                return null;
+            }
+            if (purchaseLimit != 1 || (limitPeriod != ShopLimitPeriod.PER_PLAYER && limitPeriod != ShopLimitPeriod.PERMANENT)) {
+                PocketOdds.LOGGER.error("Pocket Odds: Creative shop offer '{}' rejected! Must have purchaseLimit=1 and limitPeriod=PER_PLAYER.", offerId);
+                return null;
+            }
+            if (requiredAdvancement == null || requiredAdvancement.trim().isEmpty()) {
+                PocketOdds.LOGGER.error("Pocket Odds: Creative shop offer '{}' rejected! Must specify an endgame requiredAdvancement.", offerId);
+                return null;
+            }
+        }
 
         return new ShopOffer(
                 offerId, itemId, count, priceCredits, category, purchaseLimit, limitPeriod,

@@ -23,6 +23,7 @@ public class SyncShopCatalogS2CPacket {
         private final int remainingLimit;
         private final boolean available;
         private final boolean advancementSatisfied;
+        private final String requiredAdvancement;
         private final boolean stageSatisfied;
         private final String requiredStage;
         private final String nameKey;
@@ -30,7 +31,8 @@ public class SyncShopCatalogS2CPacket {
 
         public ClientShopEntry(String offerId, ItemStack rewardStack, long priceCredits, int categoryOrdinal,
                                int limitPeriodOrdinal, int remainingLimit, boolean available,
-                               boolean advancementSatisfied, boolean stageSatisfied, String requiredStage,
+                               boolean advancementSatisfied, String requiredAdvancement,
+                               boolean stageSatisfied, String requiredStage,
                                String nameKey, String descriptionKey) {
             this.offerId = offerId != null ? offerId : "";
             this.rewardStack = rewardStack != null ? rewardStack : ItemStack.EMPTY;
@@ -40,6 +42,7 @@ public class SyncShopCatalogS2CPacket {
             this.remainingLimit = remainingLimit;
             this.available = available;
             this.advancementSatisfied = advancementSatisfied;
+            this.requiredAdvancement = requiredAdvancement != null ? requiredAdvancement : "";
             this.stageSatisfied = stageSatisfied;
             this.requiredStage = requiredStage != null ? requiredStage : "";
             this.nameKey = nameKey != null ? nameKey : "";
@@ -48,8 +51,15 @@ public class SyncShopCatalogS2CPacket {
 
         public ClientShopEntry(String offerId, ItemStack rewardStack, long priceCredits, int categoryOrdinal,
                                int limitPeriodOrdinal, int remainingLimit, boolean available,
+                               boolean advancementSatisfied, boolean stageSatisfied, String requiredStage,
+                               String nameKey, String descriptionKey) {
+            this(offerId, rewardStack, priceCredits, categoryOrdinal, limitPeriodOrdinal, remainingLimit, available, advancementSatisfied, "", stageSatisfied, requiredStage, nameKey, descriptionKey);
+        }
+
+        public ClientShopEntry(String offerId, ItemStack rewardStack, long priceCredits, int categoryOrdinal,
+                               int limitPeriodOrdinal, int remainingLimit, boolean available,
                                boolean advancementSatisfied, String nameKey, String descriptionKey) {
-            this(offerId, rewardStack, priceCredits, categoryOrdinal, limitPeriodOrdinal, remainingLimit, available, advancementSatisfied, true, "", nameKey, descriptionKey);
+            this(offerId, rewardStack, priceCredits, categoryOrdinal, limitPeriodOrdinal, remainingLimit, available, advancementSatisfied, "", true, "", nameKey, descriptionKey);
         }
 
         public ClientShopEntry(FriendlyByteBuf buf) {
@@ -61,6 +71,7 @@ public class SyncShopCatalogS2CPacket {
             this.remainingLimit = buf.readVarInt();
             this.available = buf.readBoolean();
             this.advancementSatisfied = buf.readBoolean();
+            this.requiredAdvancement = buf.readUtf(128);
             this.stageSatisfied = buf.readBoolean();
             this.requiredStage = buf.readUtf(128);
             this.nameKey = buf.readUtf(128);
@@ -76,6 +87,7 @@ public class SyncShopCatalogS2CPacket {
             buf.writeVarInt(remainingLimit);
             buf.writeBoolean(available);
             buf.writeBoolean(advancementSatisfied);
+            buf.writeUtf(requiredAdvancement, 128);
             buf.writeBoolean(stageSatisfied);
             buf.writeUtf(requiredStage, 128);
             buf.writeUtf(nameKey, 128);
@@ -91,6 +103,7 @@ public class SyncShopCatalogS2CPacket {
         public int getRemainingLimit() { return remainingLimit; }
         public boolean isAvailable() { return available; }
         public boolean isAdvancementSatisfied() { return advancementSatisfied; }
+        public String getRequiredAdvancement() { return requiredAdvancement; }
         public boolean isStageSatisfied() { return stageSatisfied; }
         public String getRequiredStage() { return requiredStage; }
         public String getNameKey() { return nameKey; }

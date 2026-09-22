@@ -23,19 +23,19 @@ import java.util.*;
 
 public class ShopScreenTab {
     public enum SortMode {
-        DEFAULT("Сорт: --"),
-        PRICE_ASC("Сорт: Ц▲"),
-        PRICE_DESC("Сорт: Ц▼"),
-        NAME_ASC("Сорт: А-Я");
+        DEFAULT("shop.pocketodds.sort.default"),
+        PRICE_ASC("shop.pocketodds.sort.price_asc"),
+        PRICE_DESC("shop.pocketodds.sort.price_desc"),
+        NAME_ASC("shop.pocketodds.sort.name_asc");
 
-        private final String label;
+        private final String translationKey;
 
-        SortMode(String label) {
-            this.label = label;
+        SortMode(String translationKey) {
+            this.translationKey = translationKey;
         }
 
-        public String getLabel() {
-            return label;
+        public Component getLabel() {
+            return Component.translatable(translationKey);
         }
     }
 
@@ -141,14 +141,14 @@ public class ShopScreenTab {
         // If modal confirmation is open, render only modal dialog buttons
         if (confirmModalEntry != null) {
             // Confirm Buy Button
-            widgetAdder.accept(Button.builder(Component.literal("§aПодтвердить§r"), btn -> {
+            widgetAdder.accept(Button.builder(Component.translatable("shop.pocketodds.action.confirm"), btn -> {
                 ModMessages.sendToServer(new BuyShopOfferC2SPacket(screen.getMenu().containerId, confirmModalEntry.getOfferId(), UUID.randomUUID(), selectedSource));
                 confirmModalEntry = null;
                 screen.rebuildWidgetsForCurrentCategory();
             }).bounds(leftPos + 24, topPos + 96, 80, 16).build());
 
             // Cancel Button
-            widgetAdder.accept(Button.builder(Component.literal("§cОтмена§r"), btn -> {
+            widgetAdder.accept(Button.builder(Component.translatable("shop.pocketodds.action.cancel"), btn -> {
                 confirmModalEntry = null;
                 screen.rebuildWidgetsForCurrentCategory();
             }).bounds(leftPos + 116, topPos + 96, 80, 16).build());
@@ -156,13 +156,8 @@ public class ShopScreenTab {
         }
 
         // Payment Source Toggle Button
-        String srcName = switch (selectedSource) {
-            case INVENTORY -> "§eИнвент.";
-            case POUCH -> "§bМешок";
-            case INVENTORY_THEN_POUCH -> "§aИнв->Меш";
-            case POUCH_THEN_INVENTORY -> "§dМеш->Инв";
-        };
-        widgetAdder.accept(Button.builder(Component.literal(srcName), btn -> {
+        Component srcName = Component.translatable("shop.pocketodds.source." + selectedSource.name().toLowerCase(Locale.ROOT));
+        widgetAdder.accept(Button.builder(srcName, btn -> {
             selectedSource = ShopPaymentSource.fromOrdinal((selectedSource.ordinal() + 1) % ShopPaymentSource.values().length);
             pendingConfirmOfferId = "";
             screen.rebuildWidgetsForCurrentCategory();
@@ -170,7 +165,7 @@ public class ShopScreenTab {
 
         // Search EditBox
         String oldQuery = (searchBox != null) ? searchBox.getValue() : searchQuery;
-        searchBox = new EditBox(Minecraft.getInstance().font, leftPos + 68, topPos + 20, 74, 14, Component.literal("Поиск"));
+        searchBox = new EditBox(Minecraft.getInstance().font, leftPos + 68, topPos + 20, 74, 14, Component.translatable("shop.pocketodds.search.title"));
         searchBox.setHint(Component.translatable("shop.pocketodds.search.hint"));
         searchBox.setValue(oldQuery);
         searchBox.setResponder(text -> {
@@ -195,9 +190,10 @@ public class ShopScreenTab {
         }).bounds(leftPos + 10, topPos + 120, 18, 14).build());
 
         // Category filter toggle button
-        String catLabel = (selectedCategoryFilter == null) ? "Кат: Все" : "Кат: " + selectedCategoryFilter.name();
-        if (catLabel.length() > 13) catLabel = catLabel.substring(0, 12) + "…";
-        widgetAdder.accept(Button.builder(Component.literal(catLabel), btn -> {
+        Component catLabel = (selectedCategoryFilter == null)
+                ? Component.translatable("shop.pocketodds.category.all_filter")
+                : Component.translatable("shop.pocketodds.category.prefix", Component.translatable("shop.pocketodds.category." + selectedCategoryFilter.name().toLowerCase(Locale.ROOT)));
+        widgetAdder.accept(Button.builder(catLabel, btn -> {
             toggleNextCategory();
             currentPage = 0;
             pendingConfirmOfferId = "";
@@ -205,7 +201,7 @@ public class ShopScreenTab {
         }).bounds(leftPos + 30, topPos + 120, 72, 14).build());
 
         // Sort mode toggle button
-        widgetAdder.accept(Button.builder(Component.literal(sortMode.getLabel()), btn -> {
+        widgetAdder.accept(Button.builder(sortMode.getLabel(), btn -> {
             toggleNextSortMode();
             currentPage = 0;
             pendingConfirmOfferId = "";
@@ -248,24 +244,24 @@ public class ShopScreenTab {
             boolean isCreativeCategory = entry.getCategoryOrdinal() == ShopCategory.CREATIVE.ordinal();
             boolean isVeryExpensive = entry.getPriceCredits() >= 262144L;
 
-            String btnText;
+            Component btnText;
             if (!hasLimit) {
-                btnText = "Лимит";
+                btnText = Component.translatable("shop.pocketodds.button.limit");
             } else if (!hasAdvancement) {
-                btnText = "Прогресс";
+                btnText = Component.translatable("shop.pocketodds.button.progress");
             } else if (!hasStage) {
-                btnText = "Стадия";
+                btnText = Component.translatable("shop.pocketodds.button.stage");
             } else if (!hasFunds) {
-                btnText = "Нет ср-в";
+                btnText = Component.translatable("shop.pocketodds.button.no_funds");
             } else if (isCreativeCategory || isVeryExpensive) {
-                btnText = "Купить";
+                btnText = Component.translatable("shop.pocketodds.button.buy");
             } else if (entry.getPriceCredits() >= 4096L && pendingConfirmOfferId.equals(entry.getOfferId()) && (now - confirmTimestamp < 3000L)) {
-                btnText = "Точно?";
+                btnText = Component.translatable("shop.pocketodds.button.confirm_prompt");
             } else {
-                btnText = "Купить";
+                btnText = Component.translatable("shop.pocketodds.button.buy");
             }
 
-            Button buyBtn = Button.builder(Component.literal(btnText), btn -> {
+            Button buyBtn = Button.builder(btnText, btn -> {
                 if (isCreativeCategory || isVeryExpensive) {
                     this.confirmModalEntry = entry;
                     screen.rebuildWidgetsForCurrentCategory();
@@ -304,8 +300,8 @@ public class ShopScreenTab {
 
     public void render(GuiGraphics guiGraphics, int leftPos, int topPos, int mouseX, int mouseY, float partialTick) {
         long available = getAvailableCredits(selectedSource);
-        String balanceStr = "§7Дост: §6" + formatNumber(available) + " кр.§r";
-        guiGraphics.drawString(Minecraft.getInstance().font, balanceStr, leftPos + 144, topPos + 23, 0xFFFFFF, false);
+        Component balanceComp = Component.translatable("shop.pocketodds.balance.available", formatNumber(available));
+        guiGraphics.drawString(Minecraft.getInstance().font, balanceComp, leftPos + 144, topPos + 23, 0xFFFFFF, false);
 
         if (confirmModalEntry != null) {
             renderConfirmModal(guiGraphics, leftPos, topPos);
@@ -346,7 +342,7 @@ public class ShopScreenTab {
         guiGraphics.fill(modalX, modalY, modalX + modalW, modalY + modalH, 0xFA141217);
 
         // Title
-        guiGraphics.drawCenteredString(Minecraft.getInstance().font, "§e★ ПОДТВЕРЖДЕНИЕ ПОКУПКИ ★§r", modalX + modalW / 2, modalY + 8, 0xFFD700);
+        guiGraphics.drawCenteredString(Minecraft.getInstance().font, Component.translatable("shop.pocketodds.modal.title"), modalX + modalW / 2, modalY + 8, 0xFFD700);
 
         ItemStack stack = confirmModalEntry.getRewardStack();
         String itemName = stack.isEmpty() ? confirmModalEntry.getOfferId() : stack.getHoverName().getString();
@@ -358,13 +354,13 @@ public class ShopScreenTab {
         }
 
         // Price and details
-        String priceStr = "§6Цена: " + formatNumber(confirmModalEntry.getPriceCredits()) + " кр.§r";
-        guiGraphics.drawCenteredString(Minecraft.getInstance().font, priceStr, modalX + modalW / 2, modalY + 56, 0xFFFFFF);
+        Component priceComp = Component.translatable("shop.pocketodds.modal.price", formatNumber(confirmModalEntry.getPriceCredits()));
+        guiGraphics.drawCenteredString(Minecraft.getInstance().font, priceComp, modalX + modalW / 2, modalY + 56, 0xFFFFFF);
 
-        String warningStr = (confirmModalEntry.getCategoryOrdinal() == ShopCategory.CREATIVE.ordinal())
-                ? "§cТворческий предмет! Лимит: 1 на игрока§r"
-                : "§7Дорогостоящая покупка магазина§r";
-        guiGraphics.drawCenteredString(Minecraft.getInstance().font, warningStr, modalX + modalW / 2, modalY + 70, 0xFFAAAA);
+        Component warningComp = (confirmModalEntry.getCategoryOrdinal() == ShopCategory.CREATIVE.ordinal())
+                ? Component.translatable("shop.pocketodds.modal.warning.creative")
+                : Component.translatable("shop.pocketodds.modal.warning.expensive");
+        guiGraphics.drawCenteredString(Minecraft.getInstance().font, warningComp, modalX + modalW / 2, modalY + 70, 0xFFAAAA);
     }
 
     private void renderOfferCard(GuiGraphics guiGraphics, int x, int y, SyncShopCatalogS2CPacket.ClientShopEntry entry) {
@@ -393,8 +389,8 @@ public class ShopScreenTab {
         guiGraphics.drawString(Minecraft.getInstance().font, title, x + 26, y + 4, titleColor, false);
 
         // Price in credits
-        String priceStr = "§6" + formatNumber(entry.getPriceCredits()) + " кр.";
-        guiGraphics.drawString(Minecraft.getInstance().font, priceStr, x + 26, y + 15, 0xFFFFFF, false);
+        Component priceComp = Component.translatable("shop.pocketodds.credits_amount", formatNumber(entry.getPriceCredits()));
+        guiGraphics.drawString(Minecraft.getInstance().font, priceComp, x + 26, y + 15, 0xFFFFFF, false);
 
         // Limit Badge
         String limitStr;
@@ -403,9 +399,9 @@ public class ShopScreenTab {
         } else {
             ShopLimitPeriod period = ShopLimitPeriod.fromOrdinal(entry.getLimitPeriodOrdinal());
             String perSuffix = switch (period) {
-                case DAILY -> "/д";
-                case WEEKLY -> "/н";
-                case PER_PLAYER, PERMANENT -> " шт";
+                case DAILY -> Component.translatable("shop.pocketodds.limit.daily_suffix").getString();
+                case WEEKLY -> Component.translatable("shop.pocketodds.limit.weekly_suffix").getString();
+                case PER_PLAYER, PERMANENT -> " " + Component.translatable("shop.pocketodds.limit.items_unit").getString();
                 case UNLIMITED -> "";
             };
             limitStr = (entry.getRemainingLimit() > 0 ? "§a" : "§c") + entry.getRemainingLimit() + perSuffix;
@@ -421,10 +417,10 @@ public class ShopScreenTab {
             long inv = getInventoryCredits();
             long pouch = pouchCredits;
             List<Component> tooltip = List.of(
-                    Component.literal("§6Источник оплаты: §f" + selectedSource.name()),
-                    Component.literal("§eИнвентарь: §f" + formatNumber(inv) + " кр."),
-                    Component.literal("§bCoin Pouch: §f" + formatNumber(pouch) + " кр."),
-                    Component.literal("§aВсего: §f" + formatNumber(inv + pouch) + " кр.")
+                    Component.translatable("shop.pocketodds.tooltip.source", selectedSource.name()),
+                    Component.translatable("shop.pocketodds.tooltip.inv_balance", formatNumber(inv)),
+                    Component.translatable("shop.pocketodds.tooltip.pouch_balance", formatNumber(pouch)),
+                    Component.translatable("shop.pocketodds.tooltip.total_balance", formatNumber(inv + pouch))
             );
             guiGraphics.renderComponentTooltip(Minecraft.getInstance().font, tooltip, mouseX, mouseY);
             return;
@@ -455,24 +451,24 @@ public class ShopScreenTab {
             // Hover over price / title
             if (mouseX >= cardX + 26 && mouseX <= cardX + 94 && mouseY >= cardY + 4 && mouseY <= cardY + 22) {
                 List<Component> costTooltip = new ArrayList<>();
-                costTooltip.add(Component.literal("§6Цена: §f" + formatNumber(entry.getPriceCredits()) + " кр."));
-                costTooltip.add(Component.literal("§7Номиналы: " + ShopOffer.formatChipBreakdown(entry.getPriceCredits())));
+                costTooltip.add(Component.translatable("shop.pocketodds.modal.price", formatNumber(entry.getPriceCredits())));
+                costTooltip.add(Component.translatable("shop.pocketodds.tooltip.denominations", ShopOffer.formatChipBreakdown(entry.getPriceCredits())));
                 if (!entry.isAdvancementSatisfied()) {
-                    costTooltip.add(Component.literal("§cТребуется достижение: allthemods/atm_star"));
+                    costTooltip.add(Component.translatable("shop.pocketodds.tooltip.advancement_required", entry.getRequiredAdvancement()));
                 }
                 if (!entry.isStageSatisfied()) {
                     String req = entry.getRequiredStage();
                     if (req.startsWith("max:")) {
-                        costTooltip.add(Component.literal("§cЗаблокировано после стадии: " + req.substring(4)));
+                        costTooltip.add(Component.translatable("shop.pocketodds.tooltip.stage_max_blocked", req.substring(4)));
                     } else {
-                        costTooltip.add(Component.literal("§cТребуется стадия игры: " + req));
+                        costTooltip.add(Component.translatable("shop.pocketodds.tooltip.stage_min_required", req));
                     }
                 }
                 if (entry.getRemainingLimit() == 0) {
-                    costTooltip.add(Component.literal("§cЛимит покупок исчерпан!"));
+                    costTooltip.add(Component.translatable("shop.pocketodds.tooltip.limit_exhausted"));
                 }
                 if (entry.getCategoryOrdinal() == ShopCategory.CREATIVE.ordinal()) {
-                    costTooltip.add(Component.literal("§dТворческий предмет (Лимит: 1 на игрока)"));
+                    costTooltip.add(Component.translatable("shop.pocketodds.tooltip.creative_limit_info"));
                 }
                 guiGraphics.renderComponentTooltip(Minecraft.getInstance().font, costTooltip, mouseX, mouseY);
                 return;

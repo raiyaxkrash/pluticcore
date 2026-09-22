@@ -377,7 +377,7 @@ public class ShopAndAnimationTest {
         SyncShopCatalogS2CPacket.ClientShopEntry entry = new SyncShopCatalogS2CPacket.ClientShopEntry(
                 "mek_basic_circuit", new ItemStack(Items.IRON_INGOT, 2), 2048L,
                 ShopCategory.COMPONENTS.ordinal(), ShopLimitPeriod.WEEKLY.ordinal(), 10, true,
-                true, true, "stage_mid", "shop.pocketodds.mek_basic_circuit", "desc"
+                true, "allthemods:allthemodium/atm_star", true, "stage_mid", "shop.pocketodds.mek_basic_circuit", "desc"
         );
         SyncShopCatalogS2CPacket syncPacket = new SyncShopCatalogS2CPacket(8192L, List.of(entry));
         FriendlyByteBuf syncBuf = new FriendlyByteBuf(Unpooled.buffer());
@@ -392,6 +392,7 @@ public class ShopAndAnimationTest {
         Assertions.assertEquals(10, decodedEntry.getRemainingLimit());
         Assertions.assertTrue(decodedEntry.isAvailable());
         Assertions.assertTrue(decodedEntry.isAdvancementSatisfied());
+        Assertions.assertEquals("allthemods:allthemodium/atm_star", decodedEntry.getRequiredAdvancement());
         Assertions.assertTrue(decodedEntry.isStageSatisfied());
         Assertions.assertEquals("stage_mid", decodedEntry.getRequiredStage());
     }
@@ -764,7 +765,7 @@ public class ShopAndAnimationTest {
         json.addProperty("offerId", "full_feature_offer");
         json.addProperty("item", "minecraft:diamond_sword");
         json.addProperty("count", 2);
-        json.addProperty("priceCredits", 1024L);
+        json.addProperty("priceCredits", 262144L);
         json.addProperty("category", "CREATIVE");
         json.addProperty("purchaseLimit", 1);
         json.addProperty("limitPeriod", "PER_PLAYER");
@@ -791,7 +792,7 @@ public class ShopAndAnimationTest {
         Assertions.assertEquals("full_feature_offer", offer.getOfferId());
         Assertions.assertEquals("minecraft:diamond_sword", offer.getItemId());
         Assertions.assertEquals(2, offer.getCount());
-        Assertions.assertEquals(1024L, offer.getPriceCredits());
+        Assertions.assertEquals(262144L, offer.getPriceCredits());
         Assertions.assertEquals(ShopCategory.CREATIVE, offer.getCategory());
         Assertions.assertEquals(1, offer.getPurchaseLimit());
         Assertions.assertEquals(ShopLimitPeriod.PER_PLAYER, offer.getLimitPeriod());
@@ -1170,5 +1171,140 @@ public class ShopAndAnimationTest {
 
         long poolPrice = net.pocketodds.command.ShopCatalogGeneratorCommand.calculateBasePrice(ShopCategory.CREATIVE, "creative_pool");
         Assertions.assertEquals(524288L, poolPrice);
+    }
+
+    @Test
+    public void testCreativeInvariantsEnforcedAtLoading() {
+        // 1. Low price rejected
+        JsonObject lowPriceJson = new JsonObject();
+        lowPriceJson.addProperty("offerId", "cheap_creative");
+        lowPriceJson.addProperty("item", "create:creative_motor");
+        lowPriceJson.addProperty("priceCredits", 100L);
+        lowPriceJson.addProperty("category", "CREATIVE");
+        lowPriceJson.addProperty("purchaseLimit", 1);
+        lowPriceJson.addProperty("limitPeriod", "PER_PLAYER");
+        lowPriceJson.addProperty("requiredAdvancement", "allthemods:allthemodium/atm_star");
+        Assertions.assertNull(ShopOffer.fromJson(lowPriceJson), "Creative offer with price below 262144 must be rejected at loading");
+
+        // 2. Limit > 1 rejected
+        JsonObject multiLimitJson = new JsonObject();
+        multiLimitJson.addProperty("offerId", "multi_creative");
+        multiLimitJson.addProperty("item", "create:creative_motor");
+        multiLimitJson.addProperty("priceCredits", 262144L);
+        multiLimitJson.addProperty("category", "CREATIVE");
+        multiLimitJson.addProperty("purchaseLimit", 5);
+        multiLimitJson.addProperty("limitPeriod", "PER_PLAYER");
+        multiLimitJson.addProperty("requiredAdvancement", "allthemods:allthemodium/atm_star");
+        Assertions.assertNull(ShopOffer.fromJson(multiLimitJson), "Creative offer with limit != 1 must be rejected at loading");
+
+        // 3. Limit period != PER_PLAYER rejected
+        JsonObject dailyLimitJson = new JsonObject();
+        dailyLimitJson.addProperty("offerId", "daily_creative");
+        dailyLimitJson.addProperty("item", "create:creative_motor");
+        dailyLimitJson.addProperty("priceCredits", 262144L);
+        dailyLimitJson.addProperty("category", "CREATIVE");
+        dailyLimitJson.addProperty("purchaseLimit", 1);
+        dailyLimitJson.addProperty("limitPeriod", "DAILY");
+        dailyLimitJson.addProperty("requiredAdvancement", "allthemods:allthemodium/atm_star");
+        Assertions.assertNull(ShopOffer.fromJson(dailyLimitJson), "Creative offer with limit period != PER_PLAYER must be rejected at loading");
+
+        // 4. Missing requiredAdvancement rejected
+        JsonObject noAdvJson = new JsonObject();
+        noAdvJson.addProperty("offerId", "noadv_creative");
+        noAdvJson.addProperty("item", "create:creative_motor");
+        noAdvJson.addProperty("priceCredits", 262144L);
+        noAdvJson.addProperty("category", "CREATIVE");
+        noAdvJson.addProperty("purchaseLimit", 1);
+        noAdvJson.addProperty("limitPeriod", "PER_PLAYER");
+        noAdvJson.addProperty("requiredAdvancement", "");
+        Assertions.assertNull(ShopOffer.fromJson(noAdvJson), "Creative offer without requiredAdvancement must be rejected at loading");
+
+        // 5. Valid creative offer accepted
+        JsonObject validJson = new JsonObject();
+        validJson.addProperty("offerId", "valid_creative");
+        validJson.addProperty("item", "create:creative_motor");
+        validJson.addProperty("priceCredits", 262144L);
+        validJson.addProperty("category", "CREATIVE");
+        validJson.addProperty("purchaseLimit", 1);
+        validJson.addProperty("limitPeriod", "PER_PLAYER");
+        validJson.addProperty("requiredAdvancement", "allthemods:allthemodium/atm_star");
+        ShopOffer validOffer = ShopOffer.fromJson(validJson);
+        Assertions.assertNotNull(validOffer, "Valid creative offer must be successfully parsed");
+        Assertions.assertEquals(ShopCategory.CREATIVE, validOffer.getCategory());
+        Assertions.assertEquals(262144L, validOffer.getPriceCredits());
+        Assertions.assertEquals(1, validOffer.getPurchaseLimit());
+        Assertions.assertEquals(ShopLimitPeriod.PER_PLAYER, validOffer.getLimitPeriod());
+        Assertions.assertEquals("allthemods:allthemodium/atm_star", validOffer.getRequiredAdvancement());
+    }
+
+    @Test
+    public void testCreativeInvariantsConstructorSafety() {
+        // Price below minimum throws
+        Assertions.assertThrows(IllegalArgumentException.class, () ->
+                new ShopOffer("test_creative", "create:creative_motor", 1, 1000L,
+                        ShopCategory.CREATIVE, 1, ShopLimitPeriod.PER_PLAYER,
+                        "allthemods:allthemodium/atm_star", true, 10, "n", "d")
+        );
+
+        // Limit != 1 throws
+        Assertions.assertThrows(IllegalArgumentException.class, () ->
+                new ShopOffer("test_creative", "create:creative_motor", 1, 262144L,
+                        ShopCategory.CREATIVE, 2, ShopLimitPeriod.PER_PLAYER,
+                        "allthemods:allthemodium/atm_star", true, 10, "n", "d")
+        );
+
+        // Limit period != PER_PLAYER throws
+        Assertions.assertThrows(IllegalArgumentException.class, () ->
+                new ShopOffer("test_creative", "create:creative_motor", 1, 262144L,
+                        ShopCategory.CREATIVE, 1, ShopLimitPeriod.DAILY,
+                        "allthemods:allthemodium/atm_star", true, 10, "n", "d")
+        );
+
+        // Empty advancement throws
+        Assertions.assertThrows(IllegalArgumentException.class, () ->
+                new ShopOffer("test_creative", "create:creative_motor", 1, 262144L,
+                        ShopCategory.CREATIVE, 1, ShopLimitPeriod.PER_PLAYER,
+                        "", true, 10, "n", "d")
+        );
+    }
+
+    @Test
+    public void testBundleFilterExclusion() {
+        // Items ending with _bundle that are not shulker boxes must be excluded
+        net.minecraft.resources.ResourceLocation bundleId = new net.minecraft.resources.ResourceLocation("minecraft", "white_bundle");
+        String reason = net.pocketodds.command.ShopCatalogGeneratorCommand.checkExclusion(bundleId, Items.AIR);
+        // If item is air, it flags air, but if item is regular item:
+        String bundleReason = net.pocketodds.command.ShopCatalogGeneratorCommand.checkExclusion(bundleId, Items.PAPER);
+        Assertions.assertEquals("Unfinished / Empty Bundle Item", bundleReason);
+
+        net.minecraft.resources.ResourceLocation validId = new net.minecraft.resources.ResourceLocation("minecraft", "iron_sword");
+        String validReason = net.pocketodds.command.ShopCatalogGeneratorCommand.checkExclusion(validId, Items.IRON_SWORD);
+        Assertions.assertNull(validReason);
+    }
+
+    @Test
+    public void testRecipeAndTagValueAnalysis() {
+        // 1. Detect category via item class / tags
+        ShopCategory swordCat = net.pocketodds.command.ShopCatalogGeneratorCommand.detectCategory(Items.DIAMOND_SWORD, new net.minecraft.resources.ResourceLocation("minecraft", "diamond_sword"));
+        Assertions.assertEquals(ShopCategory.TOOLS, swordCat);
+
+        ShopCategory appleCat = net.pocketodds.command.ShopCatalogGeneratorCommand.detectCategory(Items.APPLE, new net.minecraft.resources.ResourceLocation("minecraft", "apple"));
+        Assertions.assertEquals(ShopCategory.CONSUMABLES, appleCat);
+
+        // 2. Primitive baseline pricing
+        long unobtainiumPrice = net.pocketodds.command.ShopCatalogGeneratorCommand.calculateItemValue(
+                Items.AIR, new net.minecraft.resources.ResourceLocation("allthemodium", "unobtainium_ingot"), ShopCategory.RESOURCES, null
+        );
+        Assertions.assertEquals(131072L, unobtainiumPrice);
+
+        long netheritePrice = net.pocketodds.command.ShopCatalogGeneratorCommand.calculateItemValue(
+                Items.NETHERITE_INGOT, new net.minecraft.resources.ResourceLocation("minecraft", "netherite_ingot"), ShopCategory.RESOURCES, null
+        );
+        Assertions.assertEquals(512L, netheritePrice);
+
+        long diamondPrice = net.pocketodds.command.ShopCatalogGeneratorCommand.calculateItemValue(
+                Items.DIAMOND, new net.minecraft.resources.ResourceLocation("minecraft", "diamond"), ShopCategory.RESOURCES, null
+        );
+        Assertions.assertEquals(64L, diamondPrice);
     }
 }

@@ -12,11 +12,13 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.SpawnEggItem;
 import net.minecraftforge.fml.loading.FMLPaths;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.pocketodds.PocketOdds;
 import net.pocketodds.shop.ShopCategory;
+import net.pocketodds.shop.ShopOffer;
 import net.pocketodds.shop.ShopOfferRegistry;
 
 import java.io.BufferedWriter;
@@ -64,6 +66,14 @@ public class ShopCatalogGeneratorCommand {
         Map<String, Integer> filteredReasons = new LinkedHashMap<>();
         List<String> generatedDetails = new ArrayList<>();
 
+        net.minecraft.world.item.crafting.RecipeManager recipeManager = null;
+        try {
+            if (source != null && source.getServer() != null) {
+                recipeManager = source.getServer().getRecipeManager();
+            }
+        } catch (Throwable ignored) {
+        }
+
         for (Map.Entry<net.minecraft.resources.ResourceKey<Item>, Item> entry : ForgeRegistries.ITEMS.getEntries()) {
             ResourceLocation id = entry.getKey().location();
             Item item = entry.getValue();
@@ -95,8 +105,8 @@ public class ShopCatalogGeneratorCommand {
                 continue;
             }
 
-            ShopCategory category = detectCategory(id.getPath());
-            long price = calculateBasePrice(category, id.getPath());
+            ShopCategory category = detectCategory(item, id);
+            long price = calculateItemValue(item, id, category, recipeManager);
 
             int purchaseLimit = 0;
             String limitPeriod = "UNLIMITED";
@@ -154,7 +164,7 @@ public class ShopCatalogGeneratorCommand {
         return generatedCount;
     }
 
-    private static String checkExclusion(ResourceLocation id, Item item) {
+    public static String checkExclusion(ResourceLocation id, Item item) {
         if (item == Items.AIR) return "Air Item";
         if (item instanceof SpawnEggItem) return "Spawn Egg";
         String path = id.getPath().toLowerCase(Locale.ROOT);
@@ -164,9 +174,65 @@ public class ShopCatalogGeneratorCommand {
             return "Technical / Debug Item";
         }
         if (path.endsWith("_bundle") && !path.contains("shulker")) {
-            // Safe exclusion for empty unfinished items
+            return "Unfinished / Empty Bundle Item";
         }
         return null;
+    }
+
+    public static ShopCategory detectCategory(Item item, ResourceLocation id) {
+        if (id == null) return ShopCategory.RESOURCES;
+        String path = id.getPath().toLowerCase(Locale.ROOT);
+        if (path.contains("creative")) {
+            return ShopCategory.CREATIVE;
+        }
+
+        // 1. Tag & Class-based analysis
+        if (item instanceof net.minecraft.world.item.TieredItem || item instanceof net.minecraft.world.item.ArmorItem
+                || item instanceof net.minecraft.world.item.BowItem || item instanceof net.minecraft.world.item.CrossbowItem
+                || item instanceof net.minecraft.world.item.TridentItem || item instanceof net.minecraft.world.item.ShieldItem
+                || item instanceof net.minecraft.world.item.FishingRodItem || item instanceof net.minecraft.world.item.ShearsItem) {
+            return ShopCategory.TOOLS;
+        }
+
+        if (item != null && item.isEdible()) {
+            return ShopCategory.CONSUMABLES;
+        }
+        if (item instanceof net.minecraft.world.item.PotionItem || item instanceof net.minecraft.world.item.ArrowItem) {
+            return ShopCategory.CONSUMABLES;
+        }
+
+        if (item != null && item.builtInRegistryHolder() != null) {
+            var tags = item.builtInRegistryHolder().tags();
+            boolean hasToolTag = tags.anyMatch(t -> {
+                String p = t.location().getPath();
+                return p.contains("tools") || p.contains("armors") || p.contains("weapons");
+            });
+            if (hasToolTag) return ShopCategory.TOOLS;
+
+            tags = item.builtInRegistryHolder().tags();
+            boolean hasStorageTag = tags.anyMatch(t -> {
+                String p = t.location().getPath();
+                return p.contains("chests") || p.contains("barrels") || p.contains("shulker_boxes");
+            });
+            if (hasStorageTag) return ShopCategory.STORAGE;
+
+            tags = item.builtInRegistryHolder().tags();
+            boolean hasComponentTag = tags.anyMatch(t -> {
+                String p = t.location().getPath();
+                return p.contains("circuits") || p.contains("gears") || p.contains("plates")
+                        || p.contains("wires") || p.contains("rods") || p.contains("dusts");
+            });
+            if (hasComponentTag) return ShopCategory.COMPONENTS;
+
+            tags = item.builtInRegistryHolder().tags();
+            boolean hasFoodTag = tags.anyMatch(t -> {
+                String p = t.location().getPath();
+                return p.contains("food") || p.contains("crops") || p.contains("meat") || p.contains("seeds");
+            });
+            if (hasFoodTag) return ShopCategory.CONSUMABLES;
+        }
+
+        return detectCategory(path);
     }
 
     public static ShopCategory detectCategory(String path) {
@@ -201,6 +267,127 @@ public class ShopCatalogGeneratorCommand {
             return ShopCategory.CONSUMABLES;
         }
         return ShopCategory.RESOURCES;
+    }
+
+    public static long calculateItemValue(Item targetItem, ResourceLocation id, ShopCategory category, net.minecraft.world.item.crafting.RecipeManager recipeManager) {
+        if (category == ShopCategory.CREATIVE) {
+            return calculateBasePrice(category, id != null ? id.getPath() : "");
+        }
+
+        String path = id != null ? id.getPath().toLowerCase(Locale.ROOT) : "";
+
+        // Check primitive baseline prices
+        Long basePrimitive = getPrimitiveBasePrice(path);
+        if (basePrimitive != null) {
+            return basePrimitive;
+        }
+
+        // Recipe-based cost calculation
+        if (recipeManager != null && targetItem != null && targetItem != Items.AIR) {
+            long recipeCost = calculateRecipeCost(targetItem, recipeManager, new HashSet<>(), 0);
+            if (recipeCost > 0) {
+                long finalPrice = Math.max(16L, Math.min(ShopOffer.MAX_PRICE_CREDITS, recipeCost));
+                return roundToSensibleCreditValue(finalPrice);
+            }
+        }
+
+        // Fallback to rarity and category heuristics
+        long categoryBase = calculateBasePrice(category, path);
+        if (targetItem != null) {
+            try {
+                net.minecraft.world.item.Rarity rarity = targetItem.getRarity(new ItemStack(targetItem));
+                double rarityMult = switch (rarity) {
+                    case COMMON -> 1.0;
+                    case UNCOMMON -> 1.5;
+                    case RARE -> 3.0;
+                    case EPIC -> 6.0;
+                };
+                categoryBase = Math.round(categoryBase * rarityMult);
+            } catch (Throwable ignored) {
+            }
+        }
+        return Math.max(16L, Math.min(ShopOffer.MAX_PRICE_CREDITS, categoryBase));
+    }
+
+    private static Long getPrimitiveBasePrice(String path) {
+        if (path.contains("unobtainium_ingot")) return 131072L;
+        if (path.contains("unobtainium_nugget")) return 14563L;
+        if (path.contains("vibranium_ingot")) return 32768L;
+        if (path.contains("vibranium_nugget")) return 3640L;
+        if (path.contains("allthemodium_ingot")) return 8192L;
+        if (path.contains("allthemodium_nugget")) return 910L;
+        if (path.contains("nether_star")) return 4096L;
+        if (path.contains("netherite_ingot")) return 512L;
+        if (path.contains("diamond") && !path.contains("ore") && !path.contains("block")) return 64L;
+        if (path.contains("emerald") && !path.contains("ore") && !path.contains("block")) return 64L;
+        if (path.contains("gold_ingot") || path.contains("raw_gold")) return 16L;
+        if (path.contains("iron_ingot") || path.contains("raw_iron")) return 8L;
+        if (path.contains("copper_ingot") || path.contains("raw_copper")) return 4L;
+        if (path.contains("redstone") || path.contains("lapis")) return 8L;
+        if (path.contains("coal")) return 4L;
+        if (path.contains("cobblestone") || path.contains("dirt") || path.contains("sand") || path.contains("gravel")) return 1L;
+        return null;
+    }
+
+    private static long calculateRecipeCost(Item targetItem, net.minecraft.world.item.crafting.RecipeManager recipeManager, Set<Item> visited, int depth) {
+        if (depth > 5 || visited.contains(targetItem)) {
+            return 0L;
+        }
+        visited.add(targetItem);
+
+        net.minecraft.world.item.crafting.Recipe<?> bestRecipe = null;
+        for (net.minecraft.world.item.crafting.Recipe<?> r : recipeManager.getRecipes()) {
+            ItemStack res = r.getResultItem(net.minecraft.core.RegistryAccess.EMPTY);
+            if (!res.isEmpty() && res.getItem() == targetItem) {
+                bestRecipe = r;
+                break;
+            }
+        }
+
+        if (bestRecipe == null) {
+            visited.remove(targetItem);
+            return 0L;
+        }
+
+        long totalIngCost = 0L;
+        int count = 0;
+        for (net.minecraft.world.item.crafting.Ingredient ing : bestRecipe.getIngredients()) {
+            if (ing.isEmpty()) continue;
+            ItemStack[] items = ing.getItems();
+            if (items.length == 0) continue;
+            Item ingItem = items[0].getItem();
+            long ingCost;
+
+            ResourceLocation ingId = ForgeRegistries.ITEMS.getKey(ingItem);
+            String ingPath = ingId != null ? ingId.getPath().toLowerCase(Locale.ROOT) : "";
+            Long base = getPrimitiveBasePrice(ingPath);
+            if (base != null) {
+                ingCost = base;
+            } else {
+                ingCost = calculateRecipeCost(ingItem, recipeManager, visited, depth + 1);
+                if (ingCost == 0) {
+                    ingCost = 32L;
+                }
+            }
+            totalIngCost += ingCost;
+            count++;
+        }
+
+        visited.remove(targetItem);
+
+        if (count == 0) return 0L;
+        ItemStack output = bestRecipe.getResultItem(net.minecraft.core.RegistryAccess.EMPTY);
+        int outCount = Math.max(1, output.getCount());
+        double stepCost = ((double) totalIngCost / outCount) * 1.25;
+        return Math.round(stepCost);
+    }
+
+    private static long roundToSensibleCreditValue(long value) {
+        if (value <= 32) return value;
+        if (value <= 256) return Math.round(value / 8.0) * 8L;
+        if (value <= 2048) return Math.round(value / 32.0) * 32L;
+        if (value <= 16384) return Math.round(value / 128.0) * 128L;
+        return Math.round(value / 512.0) * 512L;
     }
 
     public static long calculateBasePrice(ShopCategory category, String path) {

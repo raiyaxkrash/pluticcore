@@ -553,6 +553,7 @@ public class ShopService {
                     remainingLimit,
                     canAfford && limitOk && advancementOk && stageOk,
                     advancementOk,
+                    o.getRequiredAdvancement(),
                     stageOk,
                     reqStage,
                     o.getNameKey(),
